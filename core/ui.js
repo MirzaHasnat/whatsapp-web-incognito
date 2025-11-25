@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿/*
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿/*
 This is a content script responsible for some UI.
 */
 
@@ -163,6 +163,7 @@ async function addIconIfNeeded()
                 document.getElementById("incognito-option-auto-receipt").addEventListener("click", onAutoReceiptsTick);
                 document.getElementById("incognito-option-status-downloading").addEventListener("click", onStatusDownloadingTick);
                 document.getElementById("incognito-option-typing-notifications").addEventListener("click", onTypingNotificationsTick);
+                document.getElementById("incognito-option-stay-online").addEventListener("click", onStayOnlineTick);
                 for (var nextButton of document.getElementsByClassName('incognito-next-button'))
                 {
                     nextButton.addEventListener("click", onNextButtonClicked);
@@ -187,6 +188,7 @@ async function addIconIfNeeded()
                 document.getElementById("incognito-option-online-status").removeEventListener("click", onOnlineUpdatesTick);
                 document.getElementById("incognito-option-typing-status").removeEventListener("click", onTypingUpdatesTick);
                 document.getElementById("incognito-option-typing-notifications").removeEventListener("click", onTypingNotificationsTick);
+                document.getElementById("incognito-option-stay-online").removeEventListener("click", onStayOnlineTick);
 
                 for (var nextButton of document.getElementsByClassName('incognito-next-button'))
                 {
@@ -228,6 +230,9 @@ function generateDropContent(options)
     var typingNotificationsTitle = "Show typing notifications";
     var typingNotificationsCaption = "Get notified when contacts start typing";
 
+    var stayOnlineTitle = "Stay always online";
+    var stayOnlineCaption = "Keep your status as online even when away";
+
     var readConfirmationsTitle = "Don't send read confirmations";
     var readConfirmationsCaption = "Blocked messages will be marked with a button.";
     var readConfirmationsNote = "Also works for stories and audio messages.";
@@ -266,6 +271,9 @@ function generateDropContent(options)
         <div class='checkmark incognito-mark incognito-marked'> </div>" :
         "unchecked " + "'> <div class='checkmark incognito-mark" + "'> </div>");
     var typingNotificationsCheckbox = (options.typingNotifications ? "checked incognito-checked'> \
+        <div class='checkmark incognito-mark incognito-marked'> </div>" :
+        "unchecked " + "'> <div class='checkmark incognito-mark" + "'> </div>");
+    var stayOnlineCheckbox = (options.stayOnline ? "checked incognito-checked'> \
         <div class='checkmark incognito-mark incognito-marked'> </div>" :
         "unchecked " + "'> <div class='checkmark incognito-mark" + "'> </div>");
 
@@ -365,6 +373,14 @@ function generateDropContent(options)
                             </div>
                             ${typingNotificationsTitle}
                             <div class='incognito-options-description'>${typingNotificationsCaption}</div>
+                        </div>
+                        <div id='incognito-option-stay-online' class='incognito-options-item' style='cursor: pointer;'>
+                            <div class='checkbox-container-incognito' style=''>
+                                <div class='checkbox checkbox checkbox-incognito ${stayOnlineCheckbox}
+                                </div>
+                            </div>
+                            ${stayOnlineTitle}
+                            <div class='incognito-options-description'>${stayOnlineCaption}</div>
                         </div>
                         <button class='incognito-back-button'>&lt Back</button>
                     </div>
@@ -665,6 +681,30 @@ function onTypingNotificationsTick()
     document.dispatchEvent(new CustomEvent('onOptionsUpdate',
     {
         detail: JSON.stringify({ typingNotifications: typingNotifications })
+    }));
+}
+
+function onStayOnlineTick()
+{
+    var stayOnline = false;
+    var checkbox = document.querySelector("#incognito-option-stay-online .checkbox-incognito");
+    
+    var checkmark = checkbox.firstElementChild;
+    
+    if (checkbox.getAttribute("class").indexOf("unchecked") > -1)
+    {
+        tickCheckbox(checkbox, checkmark);
+        stayOnline = true;
+    }
+    else
+    {
+        untickCheckbox(checkbox, checkmark);
+        stayOnline = false;
+    }
+    browser.runtime.sendMessage({ name: "setOptions", stayOnline: stayOnline });
+    document.dispatchEvent(new CustomEvent('onOptionsUpdate',
+    {
+        detail: JSON.stringify({ stayOnline: stayOnline })
     }));
 }
 

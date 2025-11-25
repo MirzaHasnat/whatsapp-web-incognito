@@ -78,6 +78,7 @@ document.addEventListener('onOptionsUpdate', function (e)
     if ('autoReceiptOnReplay' in options) autoReceiptOnReplay = options.autoReceiptOnReplay;
     if ('allowStatusDownload' in options) allowStatusDownload = options.allowStatusDownload;
     if ('typingNotifications' in options) typingNotificationsEnabled = options.typingNotifications;
+    if ('stayOnline' in options) stayOnlineEnabled = options.stayOnline;
 
     // update graphics
     var safetyDelayPanel = document.getElementById("incognito-safety-delay-option-panel");

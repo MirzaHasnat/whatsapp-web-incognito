@@ -37,7 +37,7 @@ NodeHandler.isSentNodeAllowed = function (node)
         (readConfirmationsHookEnabled && action == "receipt" && data["type"] === "played") ||
         (readConfirmationsHookEnabled && action == "received" && data["type"] === "played") ||
 
-        (onlineUpdatesHookEnabled && action === "presence" && data["type"] === "available") ||
+        (onlineUpdatesHookEnabled && action === "presence" && data["type"] === "available" && !stayOnlineEnabled) ||
         (typingUpdatesHookEnabled && action == "presence" && data["type"] == "composing") ||
         (typingUpdatesHookEnabled && action == "chatstate" && node.content[0].tag == "composing");
 

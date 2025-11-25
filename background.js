@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿// This is the background page.
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿// This is the background page.
 // it keeps track of prefrences/settings in localStorage
 
 if (typeof chrome !== "undefined") {
@@ -50,6 +50,10 @@ browser.runtime.onMessage.addListener(function (messageEvent, sender, callback)
         {
             chrome.storage.local.set({"typingNotifications": messageEvent.typingNotifications});
         }
+        if ("stayOnline" in messageEvent)
+        {
+            chrome.storage.local.set({"stayOnline": messageEvent.stayOnline});
+        }
     }
     else if (messageEvent.name == "getOptions")
     {
@@ -64,6 +68,7 @@ browser.runtime.onMessage.addListener(function (messageEvent, sender, callback)
         var autoReceiptOnReplay = true;
         var allowStatusDownload = true;
         var typingNotifications = false;
+        var stayOnline = false;
 
         chrome.storage.local.get(['onlineUpdatesHook',
                                 'typingUpdatesHook',
@@ -74,7 +79,8 @@ browser.runtime.onMessage.addListener(function (messageEvent, sender, callback)
                                 'showDeviceTypes',
                                 'autoReceiptOnReplay',
                                 'allowStatusDownload',
-                                'typingNotifications']).then(function(storage)
+                                'typingNotifications',
+                                'stayOnline']).then(function(storage)
         {
             if (storage["onlineUpdatesHook"] != undefined)
             {
@@ -116,6 +122,10 @@ browser.runtime.onMessage.addListener(function (messageEvent, sender, callback)
             {
                 typingNotifications = storage["typingNotifications"];
             }
+            if (storage["stayOnline"] != undefined)
+            {
+                stayOnline = storage["stayOnline"];
+            }
             callback(
             {
                 onlineUpdatesHook: onlineUpdatesHook,
@@ -127,7 +137,8 @@ browser.runtime.onMessage.addListener(function (messageEvent, sender, callback)
                 showDeviceTypes: showDeviceTypes,
                 autoReceiptOnReplay: autoReceiptOnReplay,
                 allowStatusDownload: allowStatusDownload,
-                typingNotifications: typingNotifications
+                typingNotifications: typingNotifications,
+                stayOnline: stayOnline
             });
         });   
     }

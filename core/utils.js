@@ -2,6 +2,9 @@
 // Helper functions
 // --------------------
 
+// Global variable for Stay Always Online feature
+var stayOnlineEnabled = false;
+
 function findChatEntryElementForJID(jid)
 {
     var chatsShown = document.getElementsByClassName(UIClassNames.CHAT_ENTRY_CLASS);

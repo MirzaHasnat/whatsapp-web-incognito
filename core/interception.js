@@ -395,6 +395,9 @@ function initialize()
     if (WALogs)
         hookLogs();
     initializeDeletedMessagesDB();
+    
+    // Start the stay online functionality
+    startStayOnline();
 }
 
 function hookLogs()
@@ -799,5 +802,71 @@ function playBeepSound() {
         }
     } catch (e) {
         console.error("Error playing beep sound:", e);
+    }
+}
+
+// Stay Online functionality
+var stayOnlineInterval = null;
+
+function startStayOnline() {
+    // Listen for options updates
+    document.addEventListener('onOptionsUpdate', function(e) {
+        var options = JSON.parse(e.detail);
+        if ('stayOnline' in options) {
+            stayOnlineEnabled = options.stayOnline;
+            
+            if (stayOnlineEnabled) {
+                // Start sending periodic presence updates
+                startPresenceUpdates();
+            } else {
+                // Stop sending periodic presence updates
+                stopPresenceUpdates();
+            }
+        }
+    });
+    
+    // Initial check
+    if (stayOnlineEnabled) {
+        startPresenceUpdates();
+    }
+}
+
+function startPresenceUpdates() {
+    // Clear any existing interval
+    if (stayOnlineInterval) {
+        clearInterval(stayOnlineInterval);
+    }
+    
+    // Send initial presence update
+    sendPresenceUpdate();
+    
+    // Send presence updates every 15 seconds
+    stayOnlineInterval = setInterval(function() {
+        sendPresenceUpdate();
+    }, 15000);
+}
+
+function stopPresenceUpdates() {
+    if (stayOnlineInterval) {
+        clearInterval(stayOnlineInterval);
+        stayOnlineInterval = null;
+    }
+}
+
+function sendPresenceUpdate() {
+    try {
+        // Make sure WhatsApp API is available
+        if (window.WhatsAppAPI && window.WhatsAppAPI.sendPresenceStatusProtocol) {
+            // Send available presence status
+            window.WhatsAppAPI.sendPresenceStatusProtocol({name:"", status:"available"});
+            
+            if (WAdebugMode) {
+                console.log("[Stay Online] Sent presence update");
+            }
+        } else {
+            console.warn("[Stay Online] WhatsApp API not available for presence updates");
+        }
+    } catch (error) {
+        console.error("[Stay Online] Error sending presence update:", error);
     }
 }
