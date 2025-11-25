@@ -5,38 +5,58 @@
 // Global variable for Stay Always Online feature
 var stayOnlineEnabled = false;
 
+// Debug mode variable (fallback if not defined elsewhere)
+if (typeof WAdebugMode === 'undefined') {
+    var WAdebugMode = false;
+}
+
 function findChatEntryElementForJID(jid)
 {
-    var chatsShown = document.getElementsByClassName(UIClassNames.CHAT_ENTRY_CLASS);
-    var blockedChat = null;
-    for (var i = 0; i < chatsShown.length; i++)
-    {
-        var reactElement = FindReact(chatsShown[i]);
-        if (reactElement.props.data == undefined) continue;
-
-        var data = reactElement.props.data;
-        if (data.data == undefined && data.chat == undefined) continue;
-
-        var id = data.data ? data.data.id : data.chat.id;
-
-        var matches = false;
-        if (typeof (jid) == "object" && id == jid)
+    try {
+        var chatsShown = document.getElementsByClassName(UIClassNames.CHAT_ENTRY_CLASS);
+        var blockedChat = null;
+        for (var i = 0; i < chatsShown.length; i++)
         {
-            matches = true;
-        }
-        else if (typeof (jid) == "string" && id.user == jid.split("@")[0].split(":")[0])
-        {
-            matches = true;
+            var reactElement = FindReact(chatsShown[i]);
+            if (reactElement.props.data == undefined) continue;
+
+            var data = reactElement.props.data;
+            if (data.data == undefined && data.chat == undefined) continue;
+
+            var id = data.data ? data.data.id : data.chat.id;
+
+            var matches = false;
+            if (typeof (jid) == "object" && id == jid)
+            {
+                matches = true;
+            }
+            else if (typeof (jid) == "string")
+            {
+                var jidUser = jid.split("@")[0].split(":")[0];
+                if (id.user == jidUser)
+                {
+                    matches = true;
+                }
+                else if (typeof id === 'string' && id.split("@")[0].split(":")[0] == jidUser)
+                {
+                    matches = true;
+                }
+            }
+
+            if (matches)
+            {
+                blockedChat = chatsShown[i];
+                break;
+            }
         }
 
-        if (matches)
-        {
-            blockedChat = chatsShown[i];
-            break;
+        return blockedChat;
+    } catch (e) {
+        if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
+            console.log("Error in findChatEntryElementForJID for JID: " + jid, e);
         }
+        return null;
     }
-
-    return blockedChat;
 }
 
 function getModuleFinder()

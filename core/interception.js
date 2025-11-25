@@ -20,7 +20,7 @@ var blockedChats = {};
 var deviceTypesPerMessage = {};
 
 // debugging flags
-var WAdebugMode = false;
+var WAdebugMode = true;
 var WALogs = true;
 var xmlDebugging = true;
 var WAPassthrough = false;
@@ -615,15 +615,28 @@ async function checkForTypingNotification(node) {
             // Debug logging
             if (WAdebugMode) {
                 console.log("[Typing Notification] Presence composing from: " + jidString);
-                console.log(node);
+                console.log("[Typing Notification] Presence node:", node);
             }
             
             // Get the display name for the JID
             var displayName = await getDisplayNameForJID(jidString);
             
-            // Show both UI and system notifications
-            showTypingNotification(displayName, jidString);
-            playBeepSound();
+            // Log the resolved display name
+            if (WAdebugMode) {
+                console.log("[Typing Notification] Resolved display name: " + displayName + " (JID: " + jidString + ")");
+            }
+            
+            // Only show notification if we have a meaningful display name
+            if (displayName && displayName.trim() !== '' && 
+                !displayName.includes('@') && 
+                !displayName.includes('lid') &&
+                displayName.length > 1) {
+                // Show both UI and system notifications
+                showTypingNotification(displayName, jidString);
+                playBeepSound();
+            } else if (WAdebugMode) {
+                console.log("[Typing Notification] Skipping notification - invalid display name: " + displayName);
+            }
         }
     } else if (node.tag === "chatstate" && node.content && node.content.length > 0) {
         // Handle chatstate nodes which might contain composing information
@@ -638,12 +651,26 @@ async function checkForTypingNotification(node) {
                     // Debug logging
                     if (WAdebugMode) {
                         console.log("[Typing Notification] Chatstate composing from: " + jidString);
-                        console.log(node);
+                        console.log("[Typing Notification] Chatstate node:", node);
                     }
                     
                     var displayName = await getDisplayNameForJID(jidString);
-                    showTypingNotification(displayName, jidString);
-                    playBeepSound();
+                    
+                    // Log the resolved display name
+                    if (WAdebugMode) {
+                        console.log("[Typing Notification] Resolved display name: " + displayName + " (JID: " + jidString + ")");
+                    }
+                    
+                    // Only show notification if we have a meaningful display name
+                    if (displayName && displayName.trim() !== '' && 
+                        !displayName.includes('@') && 
+                        !displayName.includes('lid') &&
+                        displayName.length > 1) {
+                        showTypingNotification(displayName, jidString);
+                        playBeepSound();
+                    } else if (WAdebugMode) {
+                        console.log("[Typing Notification] Skipping notification - invalid display name: " + displayName);
+                    }
                 }
                 break;
             }
@@ -656,13 +683,198 @@ async function getDisplayNameForJID(jid) {
         // Ensure jid is a string
         var jidString = typeof jid === 'object' ? jid.toString() : jid;
         
+        // Log the JID for debugging
+        if (WAdebugMode) {
+            console.log("[Typing Notification] Processing JID: " + jidString);
+        }
+        
+        // Handle LID format JIDs
+        if (jidString.includes("@lid")) {
+            // Extract the numeric portion before @lid
+            var lidNumber = jidString.split('@')[0];
+            if (lidNumber.includes(':')) {
+                lidNumber = lidNumber.split(':')[0];
+            }
+            
+            if (WAdebugMode) {
+                console.log("[Typing Notification] Extracted LID number: " + lidNumber);
+            }
+            
+            // Try to find a contact with this LID
+            if (window.WhatsAppAPI && WhatsAppAPI.Store) {
+                // Log available collections for debugging
+                if (WAdebugMode) {
+                    console.log("[Typing Notification] Available Store collections:", Object.keys(WhatsAppAPI.Store));
+                }
+                
+                // Try different contact collection approaches
+                try {
+                    var contact = null;
+                    
+                    // Try Contact collection first
+                    if (WhatsAppAPI.Store.Contact && WhatsAppAPI.Store.Contact.get) {
+                        contact = WhatsAppAPI.Store.Contact.get(lidNumber);
+                    }
+                    
+                    // Try Contacts collection if Contact doesn't work
+                    if (!contact && WhatsAppAPI.Store.Contacts && WhatsAppAPI.Store.Contacts.get) {
+                        contact = WhatsAppAPI.Store.Contacts.get(lidNumber);
+                    }
+                    
+                    if (contact) {
+                        if (WAdebugMode) {
+                            console.log("[Typing Notification] Found contact by LID:", contact);
+                        }
+                        
+                        if (contact.displayName && contact.displayName.trim() !== '') {
+                            if (WAdebugMode) {
+                                console.log("[Typing Notification] Using LID contact displayName: " + contact.displayName);
+                            }
+                            return contact.displayName;
+                        } else if (contact.name && contact.name.trim() !== '') {
+                            if (WAdebugMode) {
+                                console.log("[Typing Notification] Using LID contact name: " + contact.name);
+                            }
+                            return contact.name;
+                        } else if (contact.formattedName && contact.formattedName.trim() !== '') {
+                            if (WAdebugMode) {
+                                console.log("[Typing Notification] Using LID contact formattedName: " + contact.formattedName);
+                            }
+                            return contact.formattedName;
+                        } else if (contact.pushname && contact.pushname.trim() !== '') {
+                            if (WAdebugMode) {
+                                console.log("[Typing Notification] Using LID contact pushname: " + contact.pushname);
+                            }
+                            return contact.pushname;
+                        }
+                    }
+                } catch (lidError) {
+                    if (WAdebugMode) {
+                        console.log("[Typing Notification] Error getting contact by LID:", lidError);
+                    }
+                }
+            }
+            
+            // If we can't find by LID, return the LID number
+            if (WAdebugMode) {
+                console.log("[Typing Notification] Using LID number as fallback: " + lidNumber);
+            }
+            return lidNumber;
+        }
+        
         // Try to get the display name from WhatsApp's API
         if (window.WhatsAppAPI) {
+            // First try to get from ChatCollection
             var chat = await getChatByJID(jidString);
-            if (chat && chat.contact && chat.contact.displayName) {
-                return chat.contact.displayName;
-            } else if (chat && chat.contact && chat.contact.name) {
-                return chat.contact.name;
+            if (chat) {
+                // Log chat information for debugging
+                if (WAdebugMode) {
+                    console.log("[Typing Notification] Chat info:", chat);
+                }
+                
+                // Try to get contact name from chat
+                if (chat.contact && typeof chat.contact === 'object') {
+                    // Log contact information for debugging
+                    if (WAdebugMode) {
+                        console.log("[Typing Notification] Contact info:", chat.contact);
+                    }
+                    
+                    // Return the best available name
+                    if (chat.contact.displayName && chat.contact.displayName.trim() !== '') {
+                        if (WAdebugMode) {
+                            console.log("[Typing Notification] Using displayName: " + chat.contact.displayName);
+                        }
+                        return chat.contact.displayName;
+                    } else if (chat.contact.name && chat.contact.name.trim() !== '') {
+                        if (WAdebugMode) {
+                            console.log("[Typing Notification] Using name: " + chat.contact.name);
+                        }
+                        return chat.contact.name;
+                    } else if (chat.contact.formattedName && chat.contact.formattedName.trim() !== '') {
+                        if (WAdebugMode) {
+                            console.log("[Typing Notification] Using formattedName: " + chat.contact.formattedName);
+                        }
+                        return chat.contact.formattedName;
+                    } else if (chat.contact.pushname && chat.contact.pushname.trim() !== '') {
+                        if (WAdebugMode) {
+                            console.log("[Typing Notification] Using pushname: " + chat.contact.pushname);
+                        }
+                        return chat.contact.pushname;
+                    }
+                }
+                
+                // Try to get name from chat itself
+                if (chat.name && chat.name.trim() !== '') {
+                    if (WAdebugMode) {
+                        console.log("[Typing Notification] Using chat name: " + chat.name);
+                    }
+                    return chat.name;
+                }
+                
+                if (chat.formattedTitle && chat.formattedTitle.trim() !== '') {
+                    if (WAdebugMode) {
+                        console.log("[Typing Notification] Using chat formattedTitle: " + chat.formattedTitle);
+                    }
+                    return chat.formattedTitle;
+                }
+            }
+            
+            // If we couldn't get it from ChatCollection, try to find it through GUI
+            try {
+                var chatElem = findChatEntryElementForJID(jidString);
+                if (chatElem != null) {
+                    var reactData = FindReact(chatElem);
+                    if (reactData && reactData.props && reactData.props.data) {
+                        var chatData = reactData.props.data.data || reactData.props.data.chat;
+                        if (chatData) {
+                            if (WAdebugMode) {
+                                console.log("[Typing Notification] GUI Chat data:", chatData);
+                            }
+                            
+                            if (chatData.contact && typeof chatData.contact === 'object') {
+                                if (chatData.contact.displayName && chatData.contact.displayName.trim() !== '') {
+                                    if (WAdebugMode) {
+                                        console.log("[Typing Notification] Using GUI displayName: " + chatData.contact.displayName);
+                                    }
+                                    return chatData.contact.displayName;
+                                } else if (chatData.contact.name && chatData.contact.name.trim() !== '') {
+                                    if (WAdebugMode) {
+                                        console.log("[Typing Notification] Using GUI name: " + chatData.contact.name);
+                                    }
+                                    return chatData.contact.name;
+                                } else if (chatData.contact.formattedName && chatData.contact.formattedName.trim() !== '') {
+                                    if (WAdebugMode) {
+                                        console.log("[Typing Notification] Using GUI formattedName: " + chatData.contact.formattedName);
+                                    }
+                                    return chatData.contact.formattedName;
+                                } else if (chatData.contact.pushname && chatData.contact.pushname.trim() !== '') {
+                                    if (WAdebugMode) {
+                                        console.log("[Typing Notification] Using GUI pushname: " + chatData.contact.pushname);
+                                    }
+                                    return chatData.contact.pushname;
+                                }
+                            }
+                            
+                            if (chatData.name && chatData.name.trim() !== '') {
+                                if (WAdebugMode) {
+                                    console.log("[Typing Notification] Using GUI chat name: " + chatData.name);
+                                }
+                                return chatData.name;
+                            }
+                            
+                            if (chatData.formattedTitle && chatData.formattedTitle.trim() !== '') {
+                                if (WAdebugMode) {
+                                    console.log("[Typing Notification] Using GUI chat formattedTitle: " + chatData.formattedTitle);
+                                }
+                                return chatData.formattedTitle;
+                            }
+                        }
+                    }
+                }
+            } catch (guiError) {
+                if (WAdebugMode) {
+                    console.log("[Typing Notification] Error getting name from GUI:", guiError);
+                }
             }
         }
         
@@ -671,6 +883,11 @@ async function getDisplayNameForJID(jid) {
         if (phoneNumber.includes(':')) {
             phoneNumber = phoneNumber.split(':')[0];
         }
+        
+        if (WAdebugMode) {
+            console.log("[Typing Notification] Using phone number: " + phoneNumber);
+        }
+        
         return phoneNumber;
     } catch (e) {
         console.error("Error getting display name for JID: " + jid, e);
@@ -681,6 +898,11 @@ async function getDisplayNameForJID(jid) {
 
 function showTypingNotification(displayName, jid) {
     try {
+        // Log the notification details for debugging
+        if (WAdebugMode) {
+            console.log("[Typing Notification] Showing notification for: " + displayName + " (JID: " + jid + ")");
+        }
+        
         // Show UI notification
         showUITypingNotification(displayName);
         
@@ -717,10 +939,18 @@ function showUITypingNotification(displayName) {
         if (document.body) {
             document.body.appendChild(notification);
             
+            // Log the UI notification for debugging
+            if (WAdebugMode) {
+                console.log("[Typing Notification] UI notification shown: " + displayName + " is typing...");
+            }
+            
             // Remove notification after 5 seconds
             setTimeout(function() {
                 if (notification.parentNode) {
                     notification.parentNode.removeChild(notification);
+                    if (WAdebugMode) {
+                        console.log("[Typing Notification] UI notification removed");
+                    }
                 }
             }, 5000);
         }
@@ -734,6 +964,11 @@ function showSystemTypingNotification(displayName) {
     if (typeof Notification === 'undefined') {
         console.warn('Notification API not available');
         return;
+    }
+    
+    // Log the system notification request
+    if (WAdebugMode) {
+        console.log("[Typing Notification] Requesting system notification for: " + displayName);
     }
     
     // Request notification permission if not already granted
@@ -756,6 +991,11 @@ function createSystemNotification(displayName) {
         var iconUrl = 'images/icon_128_blue.png';
         if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
             iconUrl = chrome.runtime.getURL('images/icon_128_blue.png');
+        }
+        
+        // Log the system notification creation
+        if (WAdebugMode) {
+            console.log("[Typing Notification] Creating system notification: " + displayName + " is typing...");
         }
         
         new Notification('WhatsApp Typing Notification', {
