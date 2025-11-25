@@ -130,11 +130,14 @@ function getCurrentChatPanel()
 
 function isChatBlocked(jid)
 {
-    var user = jid.split("@")[0].split(":")[0];
+    // Ensure jid is a string
+    var jidString = typeof jid === 'object' ? jid.toString() : jid;
+    var user = jidString.split("@")[0].split(":")[0];
 
-    for (jid in blockedChats)
+    for (var blockedJid in blockedChats)
     {
-        if (jid.split("@")[0].split(":")[0] == user)
+        var blockedJidString = typeof blockedJid === 'object' ? blockedJid.toString() : blockedJid;
+        if (blockedJidString.split("@")[0].split(":")[0] == user)
             return true;
     }
 
@@ -161,6 +164,7 @@ async function getChatByJID(jid)
 
     // try to get it thorugh GUI
     var chatElem = findChatEntryElementForJID(jid);
+    var chat = null; // Declare chat variable
     if (chatElem != null)
     {
         var data = FindReact(chatElem).props.data;
@@ -177,9 +181,12 @@ async function getChatByJID(jid)
 
 function normalizeJID(jid)
 {
-    if (jid.includes("@s.whatsapp.net")) jid = jid.replace("@s.whatsapp.net", "@c.us");
-    var suffix = jid.split("@")[1];
-    var prefix = jid.split("@")[0].split(":")[0];
+    // Ensure jid is a string
+    var jidString = typeof jid === 'object' ? jid.toString() : jid;
+    
+    if (jidString.includes("@s.whatsapp.net")) jidString = jidString.replace("@s.whatsapp.net", "@c.us");
+    var suffix = jidString.split("@")[1];
+    var prefix = jidString.split("@")[0].split(":")[0];
 
     return prefix + "@" + suffix;
 }

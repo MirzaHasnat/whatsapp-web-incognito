@@ -10,6 +10,7 @@ var saveDeletedMsgsHookEnabled = false;
 var showDeviceTypesEnabled = true;
 var autoReceiptOnReplay = true;
 var safetyDelay = 0;
+var typingNotificationsEnabled = false;
 
 var isInitializing = true;
 var exceptionsList = [];
@@ -140,6 +141,16 @@ wsHook.after = function (messageEvent, url)
 
             // sanity check that our node parsing is deterministic
             await checkNodeEncoderSanity(decryptedFrameOriginal, isIncoming = true);
+
+            // Check for typing notifications
+            if (typingNotificationsEnabled) {
+                try {
+                    await checkForTypingNotification(realNode);
+                } catch (error) {
+                    console.error("Error processing typing notification:", error);
+                    // Continue processing even if typing notification fails
+                }
+            }
 
             var [isAllowed, manipulatedNode] = await NodeHandler.interceptReceivedNode(realNode);
 
@@ -586,5 +597,207 @@ async function checkNodeEncoderSanity(originalFrame, isIncoming=false)
         // But on the decoding path, WhatsApp servers could send us number strings encoded with regular BINARY_8 (252) encoding, 
         // which we will re-encode as NIBBLE_8 (255).
         //debugger;
+    }
+}
+
+async function checkForTypingNotification(node) {
+    // Check if this is a typing notification
+    if (node.tag === "presence" && node.attrs && node.attrs.type === "composing") {
+        // Extract the JID of the person typing
+        var jid = node.attrs.from;
+        if (jid) {
+            // Ensure jid is a string before processing
+            var jidString = typeof jid === 'object' ? jid.toString() : jid;
+            
+            // Debug logging
+            if (WAdebugMode) {
+                console.log("[Typing Notification] Presence composing from: " + jidString);
+                console.log(node);
+            }
+            
+            // Get the display name for the JID
+            var displayName = await getDisplayNameForJID(jidString);
+            
+            // Show both UI and system notifications
+            showTypingNotification(displayName, jidString);
+            playBeepSound();
+        }
+    } else if (node.tag === "chatstate" && node.content && node.content.length > 0) {
+        // Handle chatstate nodes which might contain composing information
+        for (var i = 0; i < node.content.length; i++) {
+            var childNode = node.content[i];
+            if (childNode.tag === "composing") {
+                var jid = node.attrs.from;
+                if (jid) {
+                    // Ensure jid is a string before processing
+                    var jidString = typeof jid === 'object' ? jid.toString() : jid;
+                    
+                    // Debug logging
+                    if (WAdebugMode) {
+                        console.log("[Typing Notification] Chatstate composing from: " + jidString);
+                        console.log(node);
+                    }
+                    
+                    var displayName = await getDisplayNameForJID(jidString);
+                    showTypingNotification(displayName, jidString);
+                    playBeepSound();
+                }
+                break;
+            }
+        }
+    }
+}
+
+async function getDisplayNameForJID(jid) {
+    try {
+        // Ensure jid is a string
+        var jidString = typeof jid === 'object' ? jid.toString() : jid;
+        
+        // Try to get the display name from WhatsApp's API
+        if (window.WhatsAppAPI) {
+            var chat = await getChatByJID(jidString);
+            if (chat && chat.contact && chat.contact.displayName) {
+                return chat.contact.displayName;
+            } else if (chat && chat.contact && chat.contact.name) {
+                return chat.contact.name;
+            }
+        }
+        
+        // Fallback to extracting from JID
+        var phoneNumber = jidString.split('@')[0];
+        if (phoneNumber.includes(':')) {
+            phoneNumber = phoneNumber.split(':')[0];
+        }
+        return phoneNumber;
+    } catch (e) {
+        console.error("Error getting display name for JID: " + jid, e);
+        var jidString = typeof jid === 'object' ? jid.toString() : jid;
+        return jidString.split('@')[0];
+    }
+}
+
+function showTypingNotification(displayName, jid) {
+    try {
+        // Show UI notification
+        showUITypingNotification(displayName);
+        
+        // Show system notification
+        showSystemTypingNotification(displayName);
+    } catch (error) {
+        console.error('Error showing typing notification:', error);
+    }
+}
+
+function showUITypingNotification(displayName) {
+    try {
+        // Create a toast-like notification on the webpage
+        var notification = document.createElement('div');
+        notification.className = 'whatsapp-incognito-typing-notification';
+        notification.textContent = displayName + " is typing...";
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: #009688;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 10000;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 14px;
+            max-width: 300px;
+            word-wrap: break-word;
+        `;
+        
+        // Check if document.body is available
+        if (document.body) {
+            document.body.appendChild(notification);
+            
+            // Remove notification after 5 seconds
+            setTimeout(function() {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 5000);
+        }
+    } catch (error) {
+        console.error('Error showing UI typing notification:', error);
+    }
+}
+
+function showSystemTypingNotification(displayName) {
+    // Check if Notification API is available
+    if (typeof Notification === 'undefined') {
+        console.warn('Notification API not available');
+        return;
+    }
+    
+    // Request notification permission if not already granted
+    if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+        Notification.requestPermission().then(function(permission) {
+            if (permission === 'granted') {
+                createSystemNotification(displayName);
+            }
+        }).catch(function(error) {
+            console.error('Error requesting notification permission:', error);
+        });
+    } else if (Notification.permission === 'granted') {
+        createSystemNotification(displayName);
+    }
+}
+
+function createSystemNotification(displayName) {
+    try {
+        // Check if chrome object is available
+        var iconUrl = 'images/icon_128_blue.png';
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
+            iconUrl = chrome.runtime.getURL('images/icon_128_blue.png');
+        }
+        
+        new Notification('WhatsApp Typing Notification', {
+            body: displayName + ' is typing...',
+            icon: iconUrl
+        });
+    } catch (error) {
+        console.error('Error creating system notification:', error);
+    }
+}
+
+function playBeepSound() {
+    // Play three beeps
+    try {
+        // Check if AudioContext is available
+        if (typeof window.AudioContext === 'undefined' && typeof window.webkitAudioContext === 'undefined') {
+            console.warn('AudioContext not available');
+            return;
+        }
+        
+        // Create audio context
+        var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Play three beeps with 200ms interval
+        for (let i = 0; i < 3; i++) {
+            setTimeout(function() {
+                try {
+                    var oscillator = audioCtx.createOscillator();
+                    var gainNode = audioCtx.createGain();
+                    
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+                    
+                    oscillator.type = 'sine';
+                    oscillator.frequency.value = 800; // 800 Hz
+                    gainNode.gain.value = 0.3; // Volume
+                    
+                    oscillator.start();
+                    oscillator.stop(audioCtx.currentTime + 0.1); // 100ms beep
+                } catch (e) {
+                    console.error("Error playing individual beep sound:", e);
+                }
+            }, i * 200); // 200ms apart
+        }
+    } catch (e) {
+        console.error("Error playing beep sound:", e);
     }
 }

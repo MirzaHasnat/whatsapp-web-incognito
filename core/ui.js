@@ -1,4 +1,4 @@
-﻿/*
+﻿﻿﻿﻿﻿﻿﻿/*
 This is a content script responsible for some UI.
 */
 
@@ -162,6 +162,7 @@ async function addIconIfNeeded()
                 document.getElementById("incognito-option-show-device-type").addEventListener("click", onShowDeviceTypesTick);
                 document.getElementById("incognito-option-auto-receipt").addEventListener("click", onAutoReceiptsTick);
                 document.getElementById("incognito-option-status-downloading").addEventListener("click", onStatusDownloadingTick);
+                document.getElementById("incognito-option-typing-notifications").addEventListener("click", onTypingNotificationsTick);
                 for (var nextButton of document.getElementsByClassName('incognito-next-button'))
                 {
                     nextButton.addEventListener("click", onNextButtonClicked);
@@ -185,6 +186,7 @@ async function addIconIfNeeded()
                 document.getElementById("incognito-option-read-confirmations").removeEventListener("click", onReadConfirmaionsTick);
                 document.getElementById("incognito-option-online-status").removeEventListener("click", onOnlineUpdatesTick);
                 document.getElementById("incognito-option-typing-status").removeEventListener("click", onTypingUpdatesTick);
+                document.getElementById("incognito-option-typing-notifications").removeEventListener("click", onTypingNotificationsTick);
 
                 for (var nextButton of document.getElementsByClassName('incognito-next-button'))
                 {
@@ -223,6 +225,9 @@ function generateDropContent(options)
     var typingStatusTitle = "Hide \"typing...\" status";
     var typingStatusCaption = "Stops sending typing updates.";
 
+    var typingNotificationsTitle = "Show typing notifications";
+    var typingNotificationsCaption = "Get notified when contacts start typing";
+
     var readConfirmationsTitle = "Don't send read confirmations";
     var readConfirmationsCaption = "Blocked messages will be marked with a button.";
     var readConfirmationsNote = "Also works for stories and audio messages.";
@@ -258,6 +263,9 @@ function generateDropContent(options)
         <div class='checkmark incognito-mark incognito-marked'> </div>" :
         "unchecked " + "'> <div class='checkmark incognito-mark" + "'> </div>");
     var allowStatusDownloadCheckbox = (options.allowStatusDownload ? "checked incognito-checked'> \
+        <div class='checkmark incognito-mark incognito-marked'> </div>" :
+        "unchecked " + "'> <div class='checkmark incognito-mark" + "'> </div>");
+    var typingNotificationsCheckbox = (options.typingNotifications ? "checked incognito-checked'> \
         <div class='checkmark incognito-mark incognito-marked'> </div>" :
         "unchecked " + "'> <div class='checkmark incognito-mark" + "'> </div>");
 
@@ -350,8 +358,13 @@ function generateDropContent(options)
                             ${allowStatusDownloadTitle}
                             <div class='incognito-options-description'>${allowStatusDownloadCaption}</div>
                         </div>
-                        <div class='incognito-options-item' style='cursor: pointer;'>
-                            More options coming soon!
+                        <div id='incognito-option-typing-notifications' class='incognito-options-item' style='cursor: pointer;'>
+                            <div class='checkbox-container-incognito' style=''>
+                                <div class='checkbox checkbox checkbox-incognito ${typingNotificationsCheckbox}
+                                </div>
+                            </div>
+                            ${typingNotificationsTitle}
+                            <div class='incognito-options-description'>${typingNotificationsCaption}</div>
                         </div>
                         <button class='incognito-back-button'>&lt Back</button>
                     </div>
@@ -628,6 +641,30 @@ function onStatusDownloadingTick()
     document.dispatchEvent(new CustomEvent('onOptionsUpdate',
     {
         detail: JSON.stringify({ allowStatusDownload: allowStatusDownload })
+    }));
+}
+
+function onTypingNotificationsTick()
+{
+    var typingNotifications = false;
+    var checkbox = document.querySelector("#incognito-option-typing-notifications .checkbox-incognito");
+    
+    var checkmark = checkbox.firstElementChild;
+    
+    if (checkbox.getAttribute("class").indexOf("unchecked") > -1)
+    {
+        tickCheckbox(checkbox, checkmark);
+        typingNotifications = true;
+    }
+    else
+    {
+        untickCheckbox(checkbox, checkmark);
+        typingNotifications = false;
+    }
+    browser.runtime.sendMessage({ name: "setOptions", typingNotifications: typingNotifications });
+    document.dispatchEvent(new CustomEvent('onOptionsUpdate',
+    {
+        detail: JSON.stringify({ typingNotifications: typingNotifications })
     }));
 }
 
