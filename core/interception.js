@@ -12,6 +12,23 @@ var autoReceiptOnReplay = true;
 var safetyDelay = 0;
 var typingNotificationsEnabled = false;
 
+// Expose typing log functions to global scope for frontend access
+window.getWhatsAppTypingLogs = function(callback) {
+    return getTypingLogs(callback);
+};
+window.getWhatsAppTypingLogsWithFilters = function(options, callback) {
+    return getTypingLogsWithFilters(options, callback);
+};
+window.getWhatsAppTypingLogStats = function(callback) {
+    return getTypingLogStats(callback);
+};
+window.clearWhatsAppTypingLogs = function(callback) {
+    return clearTypingLogs(callback);
+};
+window.exportWhatsAppTypingLogs = function(format, callback) {
+    return exportTypingLogs(format, callback);
+};
+
 var isInitializing = true;
 var exceptionsList = [];
 var blinkingChats = {};
@@ -903,6 +920,9 @@ function showTypingNotification(displayName, jid) {
             console.log("[Typing Notification] Showing notification for: " + displayName + " (JID: " + jid + ")");
         }
         
+        // Store typing log
+        storeTypingLog(displayName, jid);
+        
         // Show UI notification
         showUITypingNotification(displayName);
         
@@ -1004,6 +1024,656 @@ function createSystemNotification(displayName) {
         });
     } catch (error) {
         console.error('Error creating system notification:', error);
+    }
+}
+
+// Function to store typing logs
+function storeTypingLog(displayName, jid) {
+    try {
+        // Get additional information
+        var currentPageTitle = document.title || "WhatsApp Web";
+        var currentUrl = window.location.href || "https://web.whatsapp.com";
+        
+        // Create log entry
+        var logEntry = {
+            id: generateLogId(),
+            userName: displayName,
+            jid: jid,
+            action: "Typing",
+            dateTime: new Date().toISOString(),
+            timestamp: Date.now(),
+            onWhatsappTab: isWindowVisible(),
+            pageTitle: currentPageTitle,
+            pageUrl: currentUrl,
+            userAgent: navigator.userAgent,
+            language: navigator.language || "unknown"
+        };
+        
+        // Log for debugging
+        if (WAdebugMode) {
+            console.log("[Typing Notification] Storing log entry:", logEntry);
+        }
+        
+        // Send message to background script to store the log
+        if (typeof chrome !== 'undefined' && chrome.runtime) {
+            try {
+                if (WAdebugMode) {
+                    console.log("[Typing Notification] Sending log to background:", logEntry);
+                }
+                
+                // Try to get the extension ID dynamically first, fallback to hardcoded if needed
+                var extensionId = chrome.runtime.id || "jcklcfpggniemgobbcfjdnlbkegeehgg";
+                
+                // Test if background script is available
+                chrome.runtime.sendMessage(extensionId, {
+                    name: "ping"
+                }, function(response) {
+                    if (chrome.runtime.lastError) {
+                        if (WAdebugMode) {
+                            console.log("[Typing Notification] Background script not available, using localStorage");
+                        }
+                        // Fallback to localStorage if background script is not available
+                        fallbackToLocalStorage(logEntry);
+                    } else {
+                        // Background script is available, send the actual log
+                        chrome.runtime.sendMessage(extensionId, {
+                            name: "storeTypingLog",
+                            logEntry: logEntry
+                        }, function(response) {
+                            if (chrome.runtime.lastError) {
+                                if (WAdebugMode) {
+                                    console.log("[Typing Notification] Error sending log to background:", chrome.runtime.lastError);
+                                }
+                                // Fallback to localStorage if messaging fails
+                                fallbackToLocalStorage(logEntry);
+                            } else if (WAdebugMode) {
+                                console.log("[Typing Notification] Successfully sent log to background");
+                            }
+                        });
+                    }
+                });
+            } catch (sendMessageError) {
+                if (WAdebugMode) {
+                    console.log("[Typing Notification] Error sending message to background:", sendMessageError);
+                }
+                // Fallback to localStorage if messaging fails
+                fallbackToLocalStorage(logEntry);
+            }
+        } else {
+            if (WAdebugMode) {
+                console.log("[Typing Notification] chrome.runtime not available, using localStorage");
+            }
+            // Fallback to localStorage if chrome.runtime is not available
+            fallbackToLocalStorage(logEntry);
+        }
+    } catch (error) {
+        if (WAdebugMode) {
+            console.log("[Typing Notification] Error in storeTypingLog:", error);
+        }
+    }
+}
+
+// Fallback function to store logs in localStorage
+function fallbackToLocalStorage(logEntry) {
+    try {
+        var existingLogs = [];
+        try {
+            var storedLogs = localStorage.getItem('whatsappTypingLogs');
+            if (storedLogs) {
+                existingLogs = JSON.parse(storedLogs);
+            }
+        } catch (parseError) {
+            if (WAdebugMode) {
+                console.log("[Typing Notification] Error parsing existing logs:", parseError);
+            }
+            existingLogs = [];
+        }
+        
+        // Add new log entry
+        existingLogs.push(logEntry);
+        
+        // Keep only the last 1000 entries to prevent storage overflow
+        if (existingLogs.length > 1000) {
+            existingLogs = existingLogs.slice(-1000);
+        }
+        
+        // Save back to localStorage
+        try {
+            localStorage.setItem('whatsappTypingLogs', JSON.stringify(existingLogs));
+        } catch (storageError) {
+            if (WAdebugMode) {
+                console.log("[Typing Notification] Error storing logs in localStorage:", storageError);
+            }
+        }
+    } catch (error) {
+        if (WAdebugMode) {
+            console.log("[Typing Notification] Error in fallbackToLocalStorage:", error);
+        }
+    }
+}
+
+// Function to generate a unique log ID
+function generateLogId() {
+    return 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+function isWindowVisible() {
+    try {
+        // Check if document is visible
+        if (typeof document.hidden !== 'undefined') {
+            return !document.hidden;
+        } else if (typeof document.msHidden !== 'undefined') {
+            return !document.msHidden;
+        } else if (typeof document.webkitHidden !== 'undefined') {
+            return !document.webkitHidden;
+        }
+        
+        // Fallback: check if window is focused
+        return document.hasFocus();
+    } catch (error) {
+        if (WAdebugMode) {
+            console.log("[Typing Notification] Error checking window visibility:", error);
+        }
+        return true; // Assume visible if we can't determine
+    }
+}
+
+// Function to retrieve typing logs
+function getTypingLogs(callback) {
+    try {
+        // Send message to background script to retrieve logs
+        if (typeof chrome !== 'undefined' && chrome.runtime) {
+            try {
+                // Try to get the extension ID dynamically first, fallback to hardcoded if needed
+                var extensionId = chrome.runtime.id || "jcklcfpggniemgobbcfjdnlbkegeehgg";
+                
+                chrome.runtime.sendMessage(extensionId, {
+                    name: "getTypingLogs"
+                }, function(response) {
+                    if (chrome.runtime.lastError) {
+                        if (WAdebugMode) {
+                            console.log("[Typing Notification] Error getting logs from background:", chrome.runtime.lastError);
+                        }
+                        // Fallback to localStorage if messaging fails
+                        fallbackGetTypingLogs(callback);
+                    } else {
+                        if (callback && typeof callback === 'function') {
+                            callback(response.logs || []);
+                        }
+                    }
+                });
+            } catch (sendMessageError) {
+                if (WAdebugMode) {
+                    console.log("[Typing Notification] Error sending message to background:", sendMessageError);
+                }
+                // Fallback to localStorage if messaging fails
+                fallbackGetTypingLogs(callback);
+            }
+        } else {
+            // Fallback to localStorage if chrome.runtime is not available
+            fallbackGetTypingLogs(callback);
+        }
+    } catch (error) {
+        if (WAdebugMode) {
+            console.log("[Typing Notification] Error retrieving logs:", error);
+        }
+        if (callback && typeof callback === 'function') {
+            callback([]);
+        }
+    }
+}
+
+// Fallback function to get logs from localStorage
+function fallbackGetTypingLogs(callback) {
+    try {
+        var storedLogs = localStorage.getItem('whatsappTypingLogs');
+        if (storedLogs) {
+            var parsedLogs = JSON.parse(storedLogs);
+            if (callback && typeof callback === 'function') {
+                callback(parsedLogs);
+            }
+            return;
+        }
+        if (callback && typeof callback === 'function') {
+            callback([]);
+        }
+    } catch (error) {
+        if (WAdebugMode) {
+            console.log("[Typing Notification] Error retrieving logs from localStorage:", error);
+        }
+        if (callback && typeof callback === 'function') {
+            callback([]);
+        }
+    }
+}
+
+// Function to retrieve typing logs with filtering and pagination
+function getTypingLogsWithFilters(options, callback) {
+    try {
+        // Send message to background script to retrieve filtered logs
+        if (typeof chrome !== 'undefined' && chrome.runtime) {
+            try {
+                // Try to get the extension ID dynamically first, fallback to hardcoded if needed
+                var extensionId = chrome.runtime.id || "jcklcfpggniemgobbcfjdnlbkegeehgg";
+                
+                chrome.runtime.sendMessage(extensionId, {
+                    name: "getTypingLogsWithFilters",
+                    options: options
+                }, function(response) {
+                    if (chrome.runtime.lastError) {
+                        if (WAdebugMode) {
+                            console.log("[Typing Notification] Error getting filtered logs from background:", chrome.runtime.lastError);
+                        }
+                        // Fallback to client-side filtering if messaging fails
+                        fallbackGetTypingLogsWithFilters(options, callback);
+                    } else {
+                        if (callback && typeof callback === 'function') {
+                            callback(response.logs || []);
+                        }
+                    }
+                });
+            } catch (sendMessageError) {
+                if (WAdebugMode) {
+                    console.log("[Typing Notification] Error sending message to background:", sendMessageError);
+                }
+                // Fallback to client-side filtering if messaging fails
+                fallbackGetTypingLogsWithFilters(options, callback);
+            }
+        } else {
+            // Fallback to client-side filtering if chrome.runtime is not available
+            fallbackGetTypingLogsWithFilters(options, callback);
+        }
+    } catch (error) {
+        if (WAdebugMode) {
+            console.log("[Typing Notification] Error retrieving filtered logs:", error);
+        }
+        if (callback && typeof callback === 'function') {
+            callback([]);
+        }
+    }
+}
+
+// Fallback function for client-side filtering
+function fallbackGetTypingLogsWithFilters(options, callback) {
+    try {
+        fallbackGetTypingLogs(function(allLogs) {
+            try {
+                // Apply filters if provided
+                if (options) {
+                    // Filter by user name
+                    if (options.userName) {
+                        allLogs = allLogs.filter(log => 
+                            log.userName && log.userName.toLowerCase().includes(options.userName.toLowerCase())
+                        );
+                    }
+                    
+                    // Filter by date range
+                    if (options.startDate) {
+                        var startDate = new Date(options.startDate).getTime();
+                        allLogs = allLogs.filter(log => log.timestamp >= startDate);
+                    }
+                    
+                    if (options.endDate) {
+                        var endDate = new Date(options.endDate).getTime();
+                        allLogs = allLogs.filter(log => log.timestamp <= endDate);
+                    }
+                    
+                    // Filter by tab visibility
+                    if (options.onWhatsappTab !== undefined) {
+                        allLogs = allLogs.filter(log => log.onWhatsappTab === options.onWhatsappTab);
+                    }
+                }
+                
+                // Sort by timestamp (newest first)
+                allLogs.sort((a, b) => b.timestamp - a.timestamp);
+                
+                // Apply pagination if provided
+                if (options && options.page !== undefined && options.pageSize !== undefined) {
+                    var startIndex = (options.page - 1) * options.pageSize;
+                    var endIndex = startIndex + options.pageSize;
+                    allLogs = allLogs.slice(startIndex, endIndex);
+                }
+                
+                if (callback && typeof callback === 'function') {
+                    callback(allLogs);
+                }
+            } catch (filterError) {
+                if (WAdebugMode) {
+                    console.log("[Typing Notification] Error filtering logs:", filterError);
+                }
+                if (callback && typeof callback === 'function') {
+                    callback([]);
+                }
+            }
+        });
+    } catch (error) {
+        if (WAdebugMode) {
+            console.log("[Typing Notification] Error in fallbackGetTypingLogsWithFilters:", error);
+        }
+        if (callback && typeof callback === 'function') {
+            callback([]);
+        }
+    }
+}
+
+// Function to get typing log statistics
+function getTypingLogStats(callback) {
+    try {
+        // Send message to background script to retrieve stats
+        if (typeof chrome !== 'undefined' && chrome.runtime) {
+            try {
+                // Try to get the extension ID dynamically first, fallback to hardcoded if needed
+                var extensionId = chrome.runtime.id || "jcklcfpggniemgobbcfjdnlbkegeehgg";
+                
+                chrome.runtime.sendMessage(extensionId, {
+                    name: "getTypingLogStats"
+                }, function(response) {
+                    if (chrome.runtime.lastError) {
+                        if (WAdebugMode) {
+                            console.log("[Typing Notification] Error getting stats from background:", chrome.runtime.lastError);
+                        }
+                        // Fallback to client-side stats calculation if messaging fails
+                        fallbackGetTypingLogStats(callback);
+                    } else {
+                        if (callback && typeof callback === 'function') {
+                            callback(response.stats || {
+                                totalLogs: 0,
+                                uniqueUsers: 0,
+                                onTabCount: 0,
+                                offTabCount: 0,
+                                mostActiveUser: null,
+                                mostActiveUserCount: 0
+                            });
+                        }
+                    }
+                });
+            } catch (sendMessageError) {
+                if (WAdebugMode) {
+                    console.log("[Typing Notification] Error sending message to background:", sendMessageError);
+                }
+                // Fallback to client-side stats calculation if messaging fails
+                fallbackGetTypingLogStats(callback);
+            }
+        } else {
+            // Fallback to client-side stats calculation if chrome.runtime is not available
+            fallbackGetTypingLogStats(callback);
+        }
+    } catch (error) {
+        if (WAdebugMode) {
+            console.log("[Typing Notification] Error retrieving log stats:", error);
+        }
+        if (callback && typeof callback === 'function') {
+            callback({
+                totalLogs: 0,
+                uniqueUsers: 0,
+                onTabCount: 0,
+                offTabCount: 0,
+                mostActiveUser: null,
+                mostActiveUserCount: 0
+            });
+        }
+    }
+}
+
+// Fallback function for client-side stats calculation
+function fallbackGetTypingLogStats(callback) {
+    try {
+        fallbackGetTypingLogs(function(allLogs) {
+            try {
+                if (allLogs.length === 0) {
+                    var emptyStats = {
+                        totalLogs: 0,
+                        uniqueUsers: 0,
+                        onTabCount: 0,
+                        offTabCount: 0,
+                        mostActiveUser: null,
+                        mostActiveUserCount: 0
+                    };
+                    if (callback && typeof callback === 'function') {
+                        callback(emptyStats);
+                    }
+                    return;
+                }
+                
+                // Count statistics
+                var userCounts = {};
+                var onTabCount = 0;
+                var offTabCount = 0;
+                
+                allLogs.forEach(log => {
+                    // Count user occurrences
+                    if (log.userName) {
+                        userCounts[log.userName] = (userCounts[log.userName] || 0) + 1;
+                    }
+                    
+                    // Count tab visibility
+                    if (log.onWhatsappTab) {
+                        onTabCount++;
+                    } else {
+                        offTabCount++;
+                    }
+                });
+                
+                // Find most active user
+                var mostActiveUser = null;
+                var mostActiveUserCount = 0;
+                
+                for (var user in userCounts) {
+                    if (userCounts[user] > mostActiveUserCount) {
+                        mostActiveUser = user;
+                        mostActiveUserCount = userCounts[user];
+                    }
+                }
+                
+                var stats = {
+                    totalLogs: allLogs.length,
+                    uniqueUsers: Object.keys(userCounts).length,
+                    onTabCount: onTabCount,
+                    offTabCount: offTabCount,
+                    mostActiveUser: mostActiveUser,
+                    mostActiveUserCount: mostActiveUserCount
+                };
+                
+                if (callback && typeof callback === 'function') {
+                    callback(stats);
+                }
+            } catch (statsError) {
+                if (WAdebugMode) {
+                    console.log("[Typing Notification] Error calculating log stats:", statsError);
+                }
+                if (callback && typeof callback === 'function') {
+                    callback({
+                        totalLogs: 0,
+                        uniqueUsers: 0,
+                        onTabCount: 0,
+                        offTabCount: 0,
+                        mostActiveUser: null,
+                        mostActiveUserCount: 0
+                    });
+                }
+            }
+        });
+    } catch (error) {
+        if (WAdebugMode) {
+            console.log("[Typing Notification] Error in fallbackGetTypingLogStats:", error);
+        }
+        if (callback && typeof callback === 'function') {
+            callback({
+                totalLogs: 0,
+                uniqueUsers: 0,
+                onTabCount: 0,
+                offTabCount: 0,
+                mostActiveUser: null,
+                mostActiveUserCount: 0
+            });
+        }
+    }
+}
+
+// Function to clear typing logs
+function clearTypingLogs(callback) {
+    try {
+        // Send message to background script to clear logs
+        if (typeof chrome !== 'undefined' && chrome.runtime) {
+            try {
+                // Try to get the extension ID dynamically first, fallback to hardcoded if needed
+                var extensionId = chrome.runtime.id || "jcklcfpggniemgobbcfjdnlbkegeehgg";
+                
+                chrome.runtime.sendMessage(extensionId, {
+                    name: "clearTypingLogs"
+                }, function(response) {
+                    if (chrome.runtime.lastError) {
+                        if (WAdebugMode) {
+                            console.log("[Typing Notification] Error clearing logs in background:", chrome.runtime.lastError);
+                        }
+                        // Fallback to localStorage if messaging fails
+                        fallbackClearTypingLogs(callback);
+                    } else {
+                        if (WAdebugMode) {
+                            console.log("[Typing Notification] Typing logs cleared in background");
+                        }
+                        if (callback && typeof callback === 'function') {
+                            callback();
+                        }
+                    }
+                });
+            } catch (sendMessageError) {
+                if (WAdebugMode) {
+                    console.log("[Typing Notification] Error sending message to background:", sendMessageError);
+                }
+                // Fallback to localStorage if messaging fails
+                fallbackClearTypingLogs(callback);
+            }
+        } else {
+            // Fallback to localStorage if chrome.runtime is not available
+            fallbackClearTypingLogs(callback);
+        }
+    } catch (error) {
+        if (WAdebugMode) {
+            console.log("[Typing Notification] Error clearing logs:", error);
+        }
+        if (callback && typeof callback === 'function') {
+            callback();
+        }
+    }
+}
+
+// Fallback function to clear logs from localStorage
+function fallbackClearTypingLogs(callback) {
+    try {
+        localStorage.removeItem('whatsappTypingLogs');
+        if (WAdebugMode) {
+            console.log("[Typing Notification] Typing logs cleared from localStorage");
+        }
+        if (callback && typeof callback === 'function') {
+            callback();
+        }
+    } catch (error) {
+        if (WAdebugMode) {
+            console.log("[Typing Notification] Error clearing logs from localStorage:", error);
+        }
+        if (callback && typeof callback === 'function') {
+            callback();
+        }
+    }
+}
+
+// Function to export typing logs
+function exportTypingLogs(format, callback) {
+    try {
+        // Send message to background script to export logs
+        if (typeof chrome !== 'undefined' && chrome.runtime) {
+            try {
+                // Try to get the extension ID dynamically first, fallback to hardcoded if needed
+                var extensionId = chrome.runtime.id || "jcklcfpggniemgobbcfjdnlbkegeehgg";
+                
+                chrome.runtime.sendMessage(extensionId, {
+                    name: "exportTypingLogs",
+                    format: format
+                }, function(response) {
+                    if (chrome.runtime.lastError) {
+                        if (WAdebugMode) {
+                            console.log("[Typing Notification] Error exporting logs from background:", chrome.runtime.lastError);
+                        }
+                        // Fallback to client-side export if messaging fails
+                        fallbackExportTypingLogs(format, callback);
+                    } else {
+                        if (callback && typeof callback === 'function') {
+                            callback(response.data || null);
+                        }
+                    }
+                });
+            } catch (sendMessageError) {
+                if (WAdebugMode) {
+                    console.log("[Typing Notification] Error sending message to background:", sendMessageError);
+                }
+                // Fallback to client-side export if messaging fails
+                fallbackExportTypingLogs(format, callback);
+            }
+        } else {
+            // Fallback to client-side export if chrome.runtime is not available
+            fallbackExportTypingLogs(format, callback);
+        }
+    } catch (error) {
+        if (WAdebugMode) {
+            console.log("[Typing Notification] Error exporting logs:", error);
+        }
+        if (callback && typeof callback === 'function') {
+            callback(null);
+        }
+    }
+}
+
+// Fallback function for client-side export
+function fallbackExportTypingLogs(format, callback) {
+    try {
+        fallbackGetTypingLogs(function(logs) {
+            try {
+                var exportedData = null;
+                
+                if (format === 'csv') {
+                    // Convert to CSV format
+                    var csvContent = "ID,User Name,JID,Action,Date Time,On WhatsApp Tab,Page Title,Page URL,Timestamp\n";
+                    logs.forEach(log => {
+                        csvContent += `"${log.id || ''}","${log.userName || ''}","${log.jid || ''}","${log.action || ''}","${log.dateTime || ''}","${log.onWhatsappTab || false}","${log.pageTitle || ''}","${log.pageUrl || ''}","${log.timestamp || ''}"\n`;
+                    });
+                    exportedData = csvContent;
+                } else if (format === 'txt') {
+                    // Convert to plain text format
+                    var textContent = "WhatsApp Typing Logs\n\n";
+                    logs.forEach(log => {
+                        textContent += `User: ${log.userName || 'Unknown'}\n`;
+                        textContent += `Action: ${log.action || 'Unknown'}\n`;
+                        textContent += `Date/Time: ${log.dateTime || 'Unknown'}\n`;
+                        textContent += `On WhatsApp Tab: ${log.onWhatsappTab ? 'Yes' : 'No'}\n`;
+                        textContent += `Page: ${log.pageTitle || 'Unknown'}\n`;
+                        textContent += `------------------------\n`;
+                    });
+                    exportedData = textContent;
+                } else {
+                    // Default to JSON
+                    exportedData = JSON.stringify(logs, null, 2);
+                }
+                
+                if (callback && typeof callback === 'function') {
+                    callback(exportedData);
+                }
+            } catch (exportError) {
+                if (WAdebugMode) {
+                    console.log("[Typing Notification] Error exporting logs:", exportError);
+                }
+                if (callback && typeof callback === 'function') {
+                    callback(null);
+                }
+            }
+        });
+    } catch (error) {
+        if (WAdebugMode) {
+            console.log("[Typing Notification] Error in fallbackExportTypingLogs:", error);
+        }
+        if (callback && typeof callback === 'function') {
+            callback(null);
+        }
     }
 }
 
