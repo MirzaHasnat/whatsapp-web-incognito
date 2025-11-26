@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿// This is the background page.
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿// This is the background page.
 // it keeps track of prefrences/settings in localStorage
 
 if (typeof chrome !== "undefined") {
@@ -8,15 +8,15 @@ if (typeof chrome !== "undefined") {
 // Log when background script loads
 console.log("[Background] WhatsApp Incognito background script loaded");
 
-// Function to get typing logs from storage
+// Function to get activity logs from storage
 function getTypingLogsFromStorage(callback) {
-    chrome.storage.local.get(['whatsappTypingLogs'], function(result) {
-        var storedLogs = result.whatsappTypingLogs || [];
+    chrome.storage.local.get(['whatsappActivityLogs'], function(result) {
+        var storedLogs = result.whatsappActivityLogs || [];
         callback(storedLogs);
     });
 }
 
-// Function to store a typing log
+// Function to store an activity log
 function storeTypingLogInStorage(logEntry, callback) {
     getTypingLogsFromStorage(function(existingLogs) {
         // Add new log entry
@@ -28,7 +28,7 @@ function storeTypingLogInStorage(logEntry, callback) {
         }
         
         // Save back to extension storage
-        chrome.storage.local.set({whatsappTypingLogs: existingLogs}, function() {
+        chrome.storage.local.set({whatsappActivityLogs: existingLogs}, function() {
             if (callback && typeof callback === 'function') {
                 callback();
             }
@@ -36,16 +36,16 @@ function storeTypingLogInStorage(logEntry, callback) {
     });
 }
 
-// Function to clear typing logs
+// Function to clear activity logs
 function clearTypingLogsInStorage(callback) {
-    chrome.storage.local.remove('whatsappTypingLogs', function() {
+    chrome.storage.local.remove('whatsappActivityLogs', function() {
         if (callback && typeof callback === 'function') {
             callback();
         }
     });
 }
 
-// Function to get filtered logs
+// Function to get filtered activity logs
 function getFilteredTypingLogs(options, callback) {
     getTypingLogsFromStorage(function(allLogs) {
         try {
@@ -93,7 +93,7 @@ function getFilteredTypingLogs(options, callback) {
     });
 }
 
-// Function to get typing log statistics
+// Function to get activity log statistics
 function getTypingLogStats(callback) {
     getTypingLogsFromStorage(function(allLogs) {
         try {
@@ -161,7 +161,7 @@ function getTypingLogStats(callback) {
     });
 }
 
-// Function to export typing logs
+// Function to export activity logs
 function exportTypingLogs(format, callback) {
     getTypingLogsFromStorage(function(logs) {
         try {

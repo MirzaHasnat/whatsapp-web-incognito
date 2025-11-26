@@ -13,20 +13,551 @@ var safetyDelay = 0;
 var typingNotificationsEnabled = false;
 
 // Expose typing log functions to global scope for frontend access
-window.getWhatsAppTypingLogs = function(callback) {
+window.getWhatsAppActivityLogs = function(callback) {
     return getTypingLogs(callback);
 };
-window.getWhatsAppTypingLogsWithFilters = function(options, callback) {
+window.getWhatsAppActivityLogsWithFilters = function(options, callback) {
     return getTypingLogsWithFilters(options, callback);
 };
-window.getWhatsAppTypingLogStats = function(callback) {
+window.getWhatsAppActivityLogStats = function(callback) {
     return getTypingLogStats(callback);
 };
-window.clearWhatsAppTypingLogs = function(callback) {
+window.clearWhatsAppActivityLogs = function(callback) {
     return clearTypingLogs(callback);
 };
-window.exportWhatsAppTypingLogs = function(format, callback) {
+window.exportWhatsAppActivityLogs = function(format, callback) {
     return exportTypingLogs(format, callback);
+};
+window.loadAllChatsAndLog = function() {
+    return loadAllChatsAndLog();
+};
+window.showWhatsAppActivityLogs = function() {
+    // Create modal container
+    var modal = document.createElement('div');
+    modal.id = 'whatsapp-logs-modal';
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.7);
+        z-index: 10000;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    `;
+    
+    // Create modal content
+    var modalContent = document.createElement('div');
+    modalContent.style.cssText = `
+        background-color: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        width: 95%;
+        max-width: 1100px;
+        max-height: 90vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        animation: modalFadeIn 0.3s ease-out;
+    `;
+    
+    // Add fade-in animation
+    var style = document.createElement('style');
+    style.textContent = `
+        @keyframes modalFadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        #whatsapp-logs-modal ::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        #whatsapp-logs-modal ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        
+        #whatsapp-logs-modal ::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 4px;
+        }
+        
+        #whatsapp-logs-modal ::-webkit-scrollbar-thumb:hover {
+            background: #a1a1a1;
+        }
+    `;
+    document.head.appendChild(style);
+    
+    // Create header
+    var header = document.createElement('div');
+    header.style.cssText = `
+        padding: 20px 24px;
+        background: linear-gradient(135deg, #008069, #005c4b);
+        color: white;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    `;
+    
+    var title = document.createElement('h2');
+    title.textContent = 'WhatsApp Activity Logs';
+    title.style.cssText = `
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+    `;
+    
+    var closeButton = document.createElement('button');
+    closeButton.textContent = '×';
+    closeButton.style.cssText = `
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        color: white;
+        font-size: 28px;
+        cursor: pointer;
+        padding: 0;
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        transition: background 0.2s;
+    `;
+    
+    closeButton.onmouseover = function() {
+        this.style.background = 'rgba(255, 255, 255, 0.3)';
+    };
+    
+    closeButton.onmouseout = function() {
+        this.style.background = 'rgba(255, 255, 255, 0.2)';
+    };
+    
+    closeButton.onclick = function() {
+        document.body.removeChild(modal);
+        if (style.parentNode) {
+            style.parentNode.removeChild(style);
+        }
+    };
+    
+    header.appendChild(title);
+    header.appendChild(closeButton);
+    
+    // Create filter section
+    var filterSection = document.createElement('div');
+    filterSection.style.cssText = `
+        padding: 16px 24px;
+        background-color: #f0f2f5;
+        border-bottom: 1px solid #e0e0e0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+    `;
+    
+    var filterLabel = document.createElement('span');
+    filterLabel.textContent = 'Filters:';
+    filterLabel.style.cssText = `
+        font-weight: 600;
+        color: #3b4a54;
+        font-size: 14px;
+    `;
+    
+    var userFilterInput = document.createElement('input');
+    userFilterInput.type = 'text';
+    userFilterInput.placeholder = 'Search by user name...';
+    userFilterInput.style.cssText = `
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        flex-grow: 1;
+        min-width: 180px;
+        font-size: 14px;
+        box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+        transition: border 0.2s;
+    `;
+    
+    userFilterInput.onfocus = function() {
+        this.style.borderColor = '#008069';
+        this.style.boxShadow = 'inset 0 1px 2px rgba(0, 0, 0, 0.05), 0 0 0 2px rgba(0, 128, 105, 0.2)';
+    };
+    
+    userFilterInput.onblur = function() {
+        this.style.borderColor = '#ddd';
+        this.style.boxShadow = 'inset 0 1px 2px rgba(0, 0, 0, 0.05)';
+    };
+    
+    var tabFilterSelect = document.createElement('select');
+    tabFilterSelect.style.cssText = `
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        font-size: 14px;
+        background-color: white;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        cursor: pointer;
+    `;
+    
+    var allOption = document.createElement('option');
+    allOption.value = '';
+    allOption.textContent = 'All Tabs';
+    
+    var onTabOption = document.createElement('option');
+    onTabOption.value = 'on';
+    onTabOption.textContent = 'On Tab';
+    
+    var offTabOption = document.createElement('option');
+    offTabOption.value = 'off';
+    offTabOption.textContent = 'Off Tab';
+    
+    tabFilterSelect.appendChild(allOption);
+    tabFilterSelect.appendChild(onTabOption);
+    tabFilterSelect.appendChild(offTabOption);
+    
+    var refreshButton = document.createElement('button');
+    refreshButton.textContent = 'Refresh';
+    refreshButton.style.cssText = `
+        background-color: #008069;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 500;
+        font-size: 14px;
+        transition: background 0.2s;
+        box-shadow: 0 2px 4px rgba(0, 128, 105, 0.2);
+    `;
+    
+    refreshButton.onmouseover = function() {
+        this.style.background = '#006a52';
+    };
+    
+    refreshButton.onmouseout = function() {
+        this.style.background = '#008069';
+    };
+    
+    filterSection.appendChild(filterLabel);
+    filterSection.appendChild(userFilterInput);
+    filterSection.appendChild(tabFilterSelect);
+    filterSection.appendChild(refreshButton);
+    
+    // Create stats section
+    var statsSection = document.createElement('div');
+    statsSection.id = 'logs-stats';
+    statsSection.style.cssText = `
+        padding: 16px 24px;
+        background-color: #e8f4f1;
+        border-bottom: 1px solid #d0e8e2;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 20px;
+        font-size: 14px;
+    `;
+    
+    // Create content area
+    var content = document.createElement('div');
+    content.id = 'logs-content';
+    content.style.cssText = `
+        padding: 0 24px;
+        overflow-y: auto;
+        flex-grow: 1;
+        max-height: calc(90vh - 250px);
+    `;
+    
+    // Create loading message
+    var loading = document.createElement('div');
+    loading.innerHTML = `
+        <div style="display: flex; justify-content: center; align-items: center; height: 200px;">
+            <div style="text-align: center;">
+                <div style="width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #008069; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+                <p style="margin-top: 15px; color: #666;">Loading activity logs...</p>
+            </div>
+        </div>
+    `;
+    
+    // Add spinner animation
+    var spinnerStyle = document.createElement('style');
+    spinnerStyle.textContent = `
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    `;
+    document.head.appendChild(spinnerStyle);
+    
+    content.appendChild(loading);
+    
+    // Create footer
+    var footer = document.createElement('div');
+    footer.style.cssText = `
+        padding: 16px 24px;
+        background-color: #f0f2f5;
+        display: flex;
+        justify-content: space-between;
+        border-top: 1px solid #e0e0e0;
+    `;
+    
+    var clearButton = document.createElement('button');
+    clearButton.textContent = 'Clear All Logs';
+    clearButton.style.cssText = `
+        background-color: #dc3545;
+        color: white;
+        border: none;
+        padding: 10px 18px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 500;
+        font-size: 14px;
+        transition: background 0.2s;
+        box-shadow: 0 2px 4px rgba(220, 53, 69, 0.2);
+    `;
+    
+    clearButton.onmouseover = function() {
+        this.style.background = '#c82333';
+    };
+    
+    clearButton.onmouseout = function() {
+        this.style.background = '#dc3545';
+    };
+    
+    clearButton.onclick = function() {
+        if (confirm('Are you sure you want to clear all activity logs? This action cannot be undone.')) {
+            window.clearWhatsAppActivityLogs(function() {
+                // Refresh the logs display
+                displayLogs();
+                updateStats();
+            });
+        }
+    };
+    
+    var exportButton = document.createElement('button');
+    exportButton.textContent = 'Export Logs';
+    exportButton.style.cssText = `
+        background-color: #007bff;
+        color: white;
+        border: none;
+        padding: 10px 18px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 500;
+        font-size: 14px;
+        transition: background 0.2s;
+        box-shadow: 0 2px 4px rgba(0, 123, 255, 0.2);
+    `;
+    
+    exportButton.onmouseover = function() {
+        this.style.background = '#0069d9';
+    };
+    
+    exportButton.onmouseout = function() {
+        this.style.background = '#007bff';
+    };
+    
+    exportButton.onclick = function() {
+        // Simple export as JSON for now
+        window.exportWhatsAppActivityLogs('json', function(data) {
+            if (data) {
+                var blob = new Blob([data], {type: 'application/json'});
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = 'whatsapp-activity-logs-' + new Date().toISOString().slice(0, 10) + '.json';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+        });
+    };
+    
+    footer.appendChild(clearButton);
+    footer.appendChild(exportButton);
+    
+    // Assemble modal
+    modalContent.appendChild(header);
+    modalContent.appendChild(filterSection);
+    modalContent.appendChild(statsSection);
+    modalContent.appendChild(content);
+    modalContent.appendChild(footer);
+    modal.appendChild(modalContent);
+    
+    // Add to document
+    document.body.appendChild(modal);
+    
+    // Function to update stats
+    function updateStats() {
+        window.getWhatsAppActivityLogStats(function(stats) {
+            var statsElement = document.getElementById('logs-stats');
+            if (statsElement) {
+                statsElement.innerHTML = `
+                    <div style="display: flex; align-items: center;">
+                        <div style="background-color: #008069; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">${stats.totalLogs}</div>
+                        <div>
+                            <div style="font-weight: 600; color: #3b4a54;">Total Logs</div>
+                            <div style="font-size: 12px; color: #667781;">Activity events</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center;">
+                        <div style="background-color: #54656f; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">${stats.uniqueUsers}</div>
+                        <div>
+                            <div style="font-weight: 600; color: #3b4a54;">Unique Users</div>
+                            <div style="font-size: 12px; color: #667781;">Different contacts</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center;">
+                        <div style="background-color: #28a745; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">${stats.onTabCount}</div>
+                        <div>
+                            <div style="font-weight: 600; color: #3b4a54;">On Tab</div>
+                            <div style="font-size: 12px; color: #667781;">Active window</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center;">
+                        <div style="background-color: #ffc107; color: black; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">${stats.offTabCount}</div>
+                        <div>
+                            <div style="font-weight: 600; color: #3b4a54;">Off Tab</div>
+                            <div style="font-size: 12px; color: #667781;">Background</div>
+                        </div>
+                    </div>
+                    ${stats.mostActiveUser ? `
+                    <div style="display: flex; align-items: center;">
+                        <div style="background-color: #1982c4; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">★</div>
+                        <div>
+                            <div style="font-weight: 600; color: #3b4a54;">${stats.mostActiveUser}</div>
+                            <div style="font-size: 12px; color: #667781;">${stats.mostActiveUserCount} events</div>
+                        </div>
+                    </div>` : ''}
+                `;
+            }
+        });
+    }
+    
+    // Function to display logs
+    function displayLogs(filters = {}) {
+        var contentElement = document.getElementById('logs-content');
+        if (contentElement) {
+            // Show loading state
+            contentElement.innerHTML = `
+                <div style="display: flex; justify-content: center; align-items: center; height: 200px;">
+                    <div style="text-align: center;">
+                        <div style="width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #008069; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+                        <p style="margin-top: 15px; color: #666;">Loading activity logs...</p>
+                    </div>
+                </div>
+            `;
+            
+            window.getWhatsAppActivityLogsWithFilters(filters, function(logs) {
+                if (contentElement) {
+                    if (logs && logs.length > 0) {
+                        var html = '<div style="padding: 16px 0;">';
+                        
+                        logs.forEach(function(log) {
+                            var date = new Date(log.timestamp);
+                            var formattedDate = date.toLocaleString();
+                            var timeAgo = getTimeAgo(log.timestamp);
+                            
+                            html += `
+                                <div style="border-bottom: 1px solid #e0e0e0; padding: 16px 0; transition: background 0.2s; border-radius: 8px; margin-bottom: 4px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                                        <div>
+                                            <div style="font-weight: 600; color: #3b4a54; font-size: 16px;">${log.userName || 'Unknown User'}</div>
+                                            <div style="margin-top: 4px; display: flex; align-items: center;">
+                                                <span style="background-color: #008069; color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 500;">${log.action}</span>
+                                                ${log.onWhatsappTab ? 
+                                                    '<span style="background-color: #28a745; color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-left: 8px;">On Tab</span>' : 
+                                                    '<span style="background-color: #ffc107; color: black; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-left: 8px;">Off Tab</span>'}
+                                            </div>
+                                        </div>
+                                        <div style="text-align: right;">
+                                            <div style="color: #667781; font-size: 14px; font-weight: 500;">${timeAgo}</div>
+                                            <div style="color: #8696a0; font-size: 12px; margin-top: 4px;">${formattedDate}</div>
+                                        </div>
+                                    </div>
+                                    <div style="margin-top: 12px; color: #667781; font-size: 14px; display: flex; align-items: center;">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" style="margin-right: 6px; fill: #8696a0;">
+                                            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                                        </svg>
+                                        <span style="font-family: monospace;">${log.jid || 'N/A'}</span>
+                                    </div>
+                                    <div style="margin-top: 8px; color: #8696a0; font-size: 13px; display: flex; align-items: center;">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" style="margin-right: 6px; fill: #8696a0;">
+                                            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                                        </svg>
+                                        ${log.pageTitle || 'Unknown Page'}
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        
+                        html += '</div>';
+                        contentElement.innerHTML = html;
+                    } else {
+                        contentElement.innerHTML = `
+                            <div style="display: flex; justify-content: center; align-items: center; height: 200px;">
+                                <div style="text-align: center; color: #667781;">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48" style="fill: #d1d7db; margin-bottom: 16px;">
+                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                                    </svg>
+                                    <h3 style="margin: 0 0 8px; font-weight: 500; color: #54656f;">No Activity Logs Found</h3>
+                                    <p style="margin: 0; font-size: 14px;">There are no activity logs matching your current filters.</p>
+                                </div>
+                            </div>
+                        `;
+                    }
+                }
+            });
+        }
+    }
+    
+    // Helper function to get time ago
+    function getTimeAgo(timestamp) {
+        var now = Date.now();
+        var seconds = Math.floor((now - timestamp) / 1000);
+        
+        if (seconds < 60) return 'Just now';
+        if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+        if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+        return Math.floor(seconds / 86400) + 'd ago';
+    }
+    
+    // Set up filter event handlers
+    userFilterInput.addEventListener('input', function() {
+        applyFilters();
+    });
+    
+    tabFilterSelect.addEventListener('change', function() {
+        applyFilters();
+    });
+    
+    refreshButton.onclick = function() {
+        applyFilters();
+        updateStats();
+    };
+    
+    function applyFilters() {
+        var filters = {};
+        
+        if (userFilterInput.value.trim() !== '') {
+            filters.userName = userFilterInput.value.trim();
+        }
+        
+        if (tabFilterSelect.value === 'on') {
+            filters.onWhatsappTab = true;
+        } else if (tabFilterSelect.value === 'off') {
+            filters.onWhatsappTab = false;
+        }
+        
+        displayLogs(filters);
+    }
+    
+    // Load logs and stats initially
+    displayLogs();
+    updateStats();
 };
 
 var isInitializing = true;
@@ -738,31 +1269,26 @@ async function getDisplayNameForJID(jid) {
                         contact = WhatsAppAPI.Store.Contacts.get(lidNumber);
                     }
                     
+                    // Try ContactStore if available
+                    if (!contact && WhatsAppAPI.Store.ContactStore && WhatsAppAPI.Store.ContactStore.get) {
+                        contact = WhatsAppAPI.Store.ContactStore.get(lidNumber);
+                    }
+                    
                     if (contact) {
                         if (WAdebugMode) {
                             console.log("[Typing Notification] Found contact by LID:", contact);
                         }
                         
-                        if (contact.displayName && contact.displayName.trim() !== '') {
-                            if (WAdebugMode) {
-                                console.log("[Typing Notification] Using LID contact displayName: " + contact.displayName);
+                        // Try multiple name properties in order of preference
+                        var nameProperties = ['displayName', 'name', 'formattedName', 'pushname', 'shortName'];
+                        for (var i = 0; i < nameProperties.length; i++) {
+                            var prop = nameProperties[i];
+                            if (contact[prop] && contact[prop].trim() !== '') {
+                                if (WAdebugMode) {
+                                    console.log("[Typing Notification] Using LID contact " + prop + ": " + contact[prop]);
+                                }
+                                return contact[prop];
                             }
-                            return contact.displayName;
-                        } else if (contact.name && contact.name.trim() !== '') {
-                            if (WAdebugMode) {
-                                console.log("[Typing Notification] Using LID contact name: " + contact.name);
-                            }
-                            return contact.name;
-                        } else if (contact.formattedName && contact.formattedName.trim() !== '') {
-                            if (WAdebugMode) {
-                                console.log("[Typing Notification] Using LID contact formattedName: " + contact.formattedName);
-                            }
-                            return contact.formattedName;
-                        } else if (contact.pushname && contact.pushname.trim() !== '') {
-                            if (WAdebugMode) {
-                                console.log("[Typing Notification] Using LID contact pushname: " + contact.pushname);
-                            }
-                            return contact.pushname;
                         }
                     }
                 } catch (lidError) {
@@ -796,43 +1322,29 @@ async function getDisplayNameForJID(jid) {
                         console.log("[Typing Notification] Contact info:", chat.contact);
                     }
                     
-                    // Return the best available name
-                    if (chat.contact.displayName && chat.contact.displayName.trim() !== '') {
-                        if (WAdebugMode) {
-                            console.log("[Typing Notification] Using displayName: " + chat.contact.displayName);
+                    // Try multiple name properties in order of preference
+                    var nameProperties = ['displayName', 'name', 'formattedName', 'pushname', 'shortName'];
+                    for (var i = 0; i < nameProperties.length; i++) {
+                        var prop = nameProperties[i];
+                        if (chat.contact[prop] && chat.contact[prop].trim() !== '') {
+                            if (WAdebugMode) {
+                                console.log("[Typing Notification] Using " + prop + ": " + chat.contact[prop]);
+                            }
+                            return chat.contact[prop];
                         }
-                        return chat.contact.displayName;
-                    } else if (chat.contact.name && chat.contact.name.trim() !== '') {
-                        if (WAdebugMode) {
-                            console.log("[Typing Notification] Using name: " + chat.contact.name);
-                        }
-                        return chat.contact.name;
-                    } else if (chat.contact.formattedName && chat.contact.formattedName.trim() !== '') {
-                        if (WAdebugMode) {
-                            console.log("[Typing Notification] Using formattedName: " + chat.contact.formattedName);
-                        }
-                        return chat.contact.formattedName;
-                    } else if (chat.contact.pushname && chat.contact.pushname.trim() !== '') {
-                        if (WAdebugMode) {
-                            console.log("[Typing Notification] Using pushname: " + chat.contact.pushname);
-                        }
-                        return chat.contact.pushname;
                     }
                 }
                 
                 // Try to get name from chat itself
-                if (chat.name && chat.name.trim() !== '') {
-                    if (WAdebugMode) {
-                        console.log("[Typing Notification] Using chat name: " + chat.name);
+                var chatNameProperties = ['name', 'formattedTitle', 'title'];
+                for (var i = 0; i < chatNameProperties.length; i++) {
+                    var prop = chatNameProperties[i];
+                    if (chat[prop] && chat[prop].trim() !== '') {
+                        if (WAdebugMode) {
+                            console.log("[Typing Notification] Using chat " + prop + ": " + chat[prop]);
+                        }
+                        return chat[prop];
                     }
-                    return chat.name;
-                }
-                
-                if (chat.formattedTitle && chat.formattedTitle.trim() !== '') {
-                    if (WAdebugMode) {
-                        console.log("[Typing Notification] Using chat formattedTitle: " + chat.formattedTitle);
-                    }
-                    return chat.formattedTitle;
                 }
             }
             
@@ -849,41 +1361,27 @@ async function getDisplayNameForJID(jid) {
                             }
                             
                             if (chatData.contact && typeof chatData.contact === 'object') {
-                                if (chatData.contact.displayName && chatData.contact.displayName.trim() !== '') {
-                                    if (WAdebugMode) {
-                                        console.log("[Typing Notification] Using GUI displayName: " + chatData.contact.displayName);
+                                var nameProperties = ['displayName', 'name', 'formattedName', 'pushname', 'shortName'];
+                                for (var i = 0; i < nameProperties.length; i++) {
+                                    var prop = nameProperties[i];
+                                    if (chatData.contact[prop] && chatData.contact[prop].trim() !== '') {
+                                        if (WAdebugMode) {
+                                            console.log("[Typing Notification] Using GUI " + prop + ": " + chatData.contact[prop]);
+                                        }
+                                        return chatData.contact[prop];
                                     }
-                                    return chatData.contact.displayName;
-                                } else if (chatData.contact.name && chatData.contact.name.trim() !== '') {
-                                    if (WAdebugMode) {
-                                        console.log("[Typing Notification] Using GUI name: " + chatData.contact.name);
-                                    }
-                                    return chatData.contact.name;
-                                } else if (chatData.contact.formattedName && chatData.contact.formattedName.trim() !== '') {
-                                    if (WAdebugMode) {
-                                        console.log("[Typing Notification] Using GUI formattedName: " + chatData.contact.formattedName);
-                                    }
-                                    return chatData.contact.formattedName;
-                                } else if (chatData.contact.pushname && chatData.contact.pushname.trim() !== '') {
-                                    if (WAdebugMode) {
-                                        console.log("[Typing Notification] Using GUI pushname: " + chatData.contact.pushname);
-                                    }
-                                    return chatData.contact.pushname;
                                 }
                             }
                             
-                            if (chatData.name && chatData.name.trim() !== '') {
-                                if (WAdebugMode) {
-                                    console.log("[Typing Notification] Using GUI chat name: " + chatData.name);
+                            var chatNameProperties = ['name', 'formattedTitle', 'title'];
+                            for (var i = 0; i < chatNameProperties.length; i++) {
+                                var prop = chatNameProperties[i];
+                                if (chatData[prop] && chatData[prop].trim() !== '') {
+                                    if (WAdebugMode) {
+                                        console.log("[Typing Notification] Using GUI chat " + prop + ": " + chatData[prop]);
+                                    }
+                                    return chatData[prop];
                                 }
-                                return chatData.name;
-                            }
-                            
-                            if (chatData.formattedTitle && chatData.formattedTitle.trim() !== '') {
-                                if (WAdebugMode) {
-                                    console.log("[Typing Notification] Using GUI chat formattedTitle: " + chatData.formattedTitle);
-                                }
-                                return chatData.formattedTitle;
                             }
                         }
                     }
@@ -891,6 +1389,38 @@ async function getDisplayNameForJID(jid) {
             } catch (guiError) {
                 if (WAdebugMode) {
                     console.log("[Typing Notification] Error getting name from GUI:", guiError);
+                }
+            }
+            
+            // Try to get from Contact store directly
+            try {
+                if (WhatsAppAPI.Store && WhatsAppAPI.Store.Contact) {
+                    var contactJid = jidString.split('@')[0];
+                    if (contactJid.includes(':')) {
+                        contactJid = contactJid.split(':')[0];
+                    }
+                    
+                    var contact = WhatsAppAPI.Store.Contact.get(contactJid);
+                    if (contact) {
+                        if (WAdebugMode) {
+                            console.log("[Typing Notification] Found contact directly:", contact);
+                        }
+                        
+                        var nameProperties = ['displayName', 'name', 'formattedName', 'pushname', 'shortName'];
+                        for (var i = 0; i < nameProperties.length; i++) {
+                            var prop = nameProperties[i];
+                            if (contact[prop] && contact[prop].trim() !== '') {
+                                if (WAdebugMode) {
+                                    console.log("[Typing Notification] Using direct contact " + prop + ": " + contact[prop]);
+                                }
+                                return contact[prop];
+                            }
+                        }
+                    }
+                }
+            } catch (contactError) {
+                if (WAdebugMode) {
+                    console.log("[Typing Notification] Error getting contact directly:", contactError);
                 }
             }
         }
@@ -1118,7 +1648,7 @@ function fallbackToLocalStorage(logEntry) {
     try {
         var existingLogs = [];
         try {
-            var storedLogs = localStorage.getItem('whatsappTypingLogs');
+            var storedLogs = localStorage.getItem('whatsappActivityLogs');
             if (storedLogs) {
                 existingLogs = JSON.parse(storedLogs);
             }
@@ -1139,7 +1669,7 @@ function fallbackToLocalStorage(logEntry) {
         
         // Save back to localStorage
         try {
-            localStorage.setItem('whatsappTypingLogs', JSON.stringify(existingLogs));
+            localStorage.setItem('whatsappActivityLogs', JSON.stringify(existingLogs));
         } catch (storageError) {
             if (WAdebugMode) {
                 console.log("[Typing Notification] Error storing logs in localStorage:", storageError);
@@ -1226,7 +1756,7 @@ function getTypingLogs(callback) {
 // Fallback function to get logs from localStorage
 function fallbackGetTypingLogs(callback) {
     try {
-        var storedLogs = localStorage.getItem('whatsappTypingLogs');
+        var storedLogs = localStorage.getItem('whatsappActivityLogs');
         if (storedLogs) {
             var parsedLogs = JSON.parse(storedLogs);
             if (callback && typeof callback === 'function') {
@@ -1561,9 +2091,9 @@ function clearTypingLogs(callback) {
 // Fallback function to clear logs from localStorage
 function fallbackClearTypingLogs(callback) {
     try {
-        localStorage.removeItem('whatsappTypingLogs');
+        localStorage.removeItem('whatsappActivityLogs');
         if (WAdebugMode) {
-            console.log("[Typing Notification] Typing logs cleared from localStorage");
+            console.log("[Typing Notification] Activity logs cleared from localStorage");
         }
         if (callback && typeof callback === 'function') {
             callback();
@@ -1677,6 +2207,186 @@ function fallbackExportTypingLogs(format, callback) {
     }
 }
 
+// Function to load all chats and log their JIDs/LIDs and names
+// Added limit parameter to prevent stack overflow
+function loadAllChatsAndLog(limit) {
+    try {
+        // Set default limit if not provided
+        var chatLimit = limit && typeof limit === 'number' ? limit : null;
+        
+        if (WAdebugMode) {
+            console.log("[Chat Loader] Loading chats" + (chatLimit ? " (limit: " + chatLimit + ")" : ""));
+        }
+        
+        // Check if WhatsApp API is available
+        if (window.WhatsAppAPI) {
+            // Try different approaches to get chats
+            var allChats = null;
+            
+            // Method 1: Try ChatCollection
+            if (WhatsAppAPI.ChatCollection && typeof WhatsAppAPI.ChatCollection.getAll === 'function') {
+                try {
+                    allChats = WhatsAppAPI.ChatCollection.getAll();
+                } catch (e) {
+                    if (WAdebugMode) {
+                        console.log("[Chat Loader] ChatCollection.getAll failed:", e);
+                    }
+                }
+            }
+            
+            // Method 2: Try Store if available
+            if ((!allChats || !Array.isArray(allChats)) && WhatsAppAPI.Store) {
+                if (WhatsAppAPI.Store.Chat && typeof WhatsAppAPI.Store.Chat.models === 'object') {
+                    try {
+                        allChats = WhatsAppAPI.Store.Chat.models;
+                    } catch (e) {
+                        if (WAdebugMode) {
+                            console.log("[Chat Loader] Store.Chat.models failed:", e);
+                        }
+                    }
+                } else if (WhatsAppAPI.Store.Chats && typeof WhatsAppAPI.Store.Chats.models === 'object') {
+                    try {
+                        allChats = WhatsAppAPI.Store.Chats.models;
+                    } catch (e) {
+                        if (WAdebugMode) {
+                            console.log("[Chat Loader] Store.Chats.models failed:", e);
+                        }
+                    }
+                }
+            }
+            
+            // Convert to array if it's an object
+            if (allChats && !Array.isArray(allChats) && typeof allChats === 'object') {
+                // Try to convert to array
+                if (allChats.toArray && typeof allChats.toArray === 'function') {
+                    try {
+                        allChats = allChats.toArray();
+                    } catch (e) {
+                        if (WAdebugMode) {
+                            console.log("[Chat Loader] toArray failed:", e);
+                        }
+                        // Fallback to Object.values
+                        allChats = Object.values(allChats);
+                    }
+                } else {
+                    // Fallback to Object.values
+                    allChats = Object.values(allChats);
+                }
+            }
+            
+            if (allChats && Array.isArray(allChats)) {
+                if (WAdebugMode) {
+                    console.log("[Chat Loader] Found " + allChats.length + " chats");
+                }
+                
+                var chatData = [];
+                
+                // Determine how many chats to process
+                var chatsToProcess = chatLimit ? Math.min(chatLimit, allChats.length) : allChats.length;
+                
+                // Process chats one by one with a small delay to prevent stack overflow
+                var index = 0;
+                
+                function processNextChat() {
+                    if (index >= chatsToProcess) {
+                        // Finished processing
+                        if (WAdebugMode) {
+                            console.log("[Chat Loader] Finished loading chats. Total processed: " + chatData.length);
+                            console.table(chatData); // Display as table for better visualization
+                        }
+                        return chatData;
+                    }
+                    
+                    var chat = allChats[index];
+                    try {
+                        if (!chat) {
+                            index++;
+                            setTimeout(processNextChat, 1); // Small delay
+                            return;
+                        }
+                        
+                        var jid = 'Unknown JID';
+                        var name = 'Unknown';
+                        
+                        // Extract JID
+                        if (chat.id) {
+                            jid = typeof chat.id === 'object' ? chat.id._serialized || chat.id.toString() : chat.id;
+                        } else if (chat.jid) {
+                            jid = typeof chat.jid === 'object' ? chat.jid._serialized || chat.jid.toString() : chat.jid;
+                        }
+                        
+                        // Try to get the name from different sources
+                        if (chat.contact) {
+                            if (chat.contact.displayName && chat.contact.displayName.trim() !== '') {
+                                name = chat.contact.displayName;
+                            } else if (chat.contact.name && chat.contact.name.trim() !== '') {
+                                name = chat.contact.name;
+                            } else if (chat.contact.pushname && chat.contact.pushname.trim() !== '') {
+                                name = chat.contact.pushname;
+                            } else if (chat.contact.formattedName && chat.contact.formattedName.trim() !== '') {
+                                name = chat.contact.formattedName;
+                            }
+                        }
+                        
+                        if (name === 'Unknown' && chat.name && chat.name.trim() !== '') {
+                            name = chat.name;
+                        }
+                        
+                        if (name === 'Unknown' && chat.formattedTitle && chat.formattedTitle.trim() !== '') {
+                            name = chat.formattedTitle;
+                        }
+                        
+                        // Store chat data
+                        chatData.push({
+                            index: index + 1,
+                            jid: jid,
+                            name: name
+                        });
+                        
+                        // Log chat information
+                        if (WAdebugMode) {
+                            console.log("[Chat Loader] Chat " + (index + 1) + ": JID=" + jid + ", Name=" + name);
+                        }
+                    } catch (chatError) {
+                        if (WAdebugMode) {
+                            console.log("[Chat Loader] Error processing chat " + (index + 1) + ":", chatError);
+                        }
+                    }
+                    
+                    index++;
+                    setTimeout(processNextChat, 1); // Small delay to prevent stack overflow
+                }
+                
+                // Start processing
+                processNextChat();
+                
+                return chatData;
+            } else {
+                if (WAdebugMode) {
+                    console.log("[Chat Loader] No chats found or invalid format");
+                    console.log("[Chat Loader] Available WhatsAppAPI objects:", Object.keys(WhatsAppAPI));
+                    
+                    // Try to explore Store if available
+                    if (WhatsAppAPI.Store) {
+                        console.log("[Chat Loader] Available Store objects:", Object.keys(WhatsAppAPI.Store));
+                    }
+                }
+            }
+        } else {
+            if (WAdebugMode) {
+                console.log("[Chat Loader] WhatsApp API not available");
+            }
+        }
+        
+        return [];
+    } catch (error) {
+        if (WAdebugMode) {
+            console.log("[Chat Loader] Error loading chats:", error);
+        }
+        return [];
+    }
+}
+
 function playBeepSound() {
     // Play three beeps
     try {
@@ -1780,3 +2490,29 @@ function sendPresenceUpdate() {
         console.error("[Stay Online] Error sending presence update:", error);
     }
 }
+
+// Test function to demonstrate UI functionality
+window.testWhatsAppActivityUI = function() {
+    console.log("Testing WhatsApp Activity Logs UI...");
+    
+    // Show the activity logs UI
+    window.showWhatsAppActivityLogs();
+    
+    console.log("WhatsApp Activity Logs UI should now be visible.");
+};
+
+// Test function to load and display all chats
+window.testLoadAllChats = function(limit) {
+    console.log("Loading chats" + (limit ? " (limit: " + limit + ")" : ""));
+    
+    var chats = window.loadAllChatsAndLog(limit);
+    
+    if (chats && chats.length > 0) {
+        console.log("Successfully loaded " + chats.length + " chats:");
+        console.table(chats);
+    } else {
+        console.log("No chats loaded or error occurred.");
+    }
+    
+    return chats;
+};

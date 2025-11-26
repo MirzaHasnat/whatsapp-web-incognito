@@ -7,6 +7,7 @@ async function injectOtherScripts()
 	injectScript('lib/pbf.3.0.5.min.js');
 	injectScript('lib/libsignal-protocol-ee5b8ba.min.js');
 	injectScript('lib/pako.js');
+	injectScript('lib/wppconnect-wa.js')
 
 	injectScript('core/parsing/binary_reader.js');
 	injectScript('core/parsing/binary_writer.js');
