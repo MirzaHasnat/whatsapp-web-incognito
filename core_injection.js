@@ -18,6 +18,7 @@ async function injectOtherScripts()
 	injectScript('core/utils.js');
 	injectScript('core/ui_class_names.js');
 	injectScript('core/injected_ui.js');
+	injectScript('core/wpp_utils.js');
 	
 	await injectScript('core/multi_device.js');
 	await injectScript('core/node_handler.js');

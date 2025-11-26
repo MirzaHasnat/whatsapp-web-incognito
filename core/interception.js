@@ -1236,6 +1236,23 @@ async function getDisplayNameForJID(jid) {
             console.log("[Typing Notification] Processing JID: " + jidString);
         }
         
+        // Try to get display name using WPP library first (highest priority)
+        if (typeof getDisplayNameFromWPP !== 'undefined') {
+            try {
+                const wppName = await getDisplayNameFromWPP(jidString);
+                if (wppName && wppName.trim() !== '') {
+                    if (WAdebugMode) {
+                        console.log("[Typing Notification] Using WPP display name: " + wppName);
+                    }
+                    return wppName;
+                }
+            } catch (wppError) {
+                if (WAdebugMode) {
+                    console.log("[Typing Notification] Error using WPP library:", wppError);
+                }
+            }
+        }
+        
         // Handle LID format JIDs
         if (jidString.includes("@lid")) {
             // Extract the numeric portion before @lid
