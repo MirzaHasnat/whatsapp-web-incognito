@@ -2,6 +2,57 @@
 // UI Event handlers
 // ---------------------
 
+// Function to create and inject the activity logs button
+function injectActivityLogsButton() {
+    // Check if button already exists
+    if (document.getElementById('whatsapp-activity-logs-button')) {
+        return;
+    }
+    
+    // Create the floating button
+    var button = document.createElement('div');
+    button.id = 'whatsapp-activity-logs-button';
+    button.title = 'View Activity Logs';
+    
+    // Add click handler
+    button.addEventListener('click', function() {
+        // Call the function that exists in the main world context
+        if (typeof window.showWhatsAppActivityLogs === 'function') {
+            window.showWhatsAppActivityLogs();
+        } else {
+            // Show error if function is not available
+            alert('Activity logs function is not available. Please refresh the page.');
+        }
+    });
+    
+    // Create icon inside button (using emoji for simplicity)
+    var icon = document.createElement('div');
+    icon.innerHTML = '📝';
+    icon.style.cssText = `
+        font-size: 24px;
+        color: white;
+    `;
+    
+    // Add badge to differentiate it from the main button
+    var badge = document.createElement('div');
+    badge.id = 'whatsapp-activity-logs-button-badge';
+    badge.textContent = '!';
+    
+    button.appendChild(icon);
+    button.appendChild(badge);
+    
+    // Add to document
+    document.body.appendChild(button);
+}
+
+// Watch for when the main UI is ready and inject our button
+document.addEventListener('onMainUIReady', function (e) {
+    // Inject the activity logs button after a small delay to ensure UI is ready
+    setTimeout(function() {
+        injectActivityLogsButton();
+    }, 1000);
+});
+
 document.addEventListener('onMainUIReady', function (e)
 {
     setTimeout(exposeWhatsAppAPI, 100);

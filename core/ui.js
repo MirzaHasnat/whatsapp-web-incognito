@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿/*
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿/*
 This is a content script responsible for some UI.
 */
 
@@ -723,15 +723,25 @@ function onNextButtonClicked()
 
 function onBackButtonClicked()
 {
-    var views = Array.from(document.getElementsByClassName("incognito-options-view-container"));
-    
-    requestAnimationFrame(() => {
-        for (var view of views)
+    var currentView = document.getElementsByClassName('incognito-options-view-container').length - 1;
+    for (var i = 0; i < document.getElementsByClassName('incognito-options-view-container').length; i++)
+    {
+        if (document.getElementsByClassName('incognito-options-view-container')[i].style.transform == "translate(0%, 0%)")
         {
-            var prevViewX = getTransformXOfView(view);
-            view.style.transform = "translate(" + (prevViewX + 100) + "%, 0%)";
+            currentView = i;
+            break;
         }
-    });
+    }
+
+    if (currentView > 0)
+    {
+        var views = document.getElementsByClassName('incognito-options-view-container');
+        for (var i = 0; i < views.length; i++)
+        {
+            views[i].style.transition = "transform 0.3s ease";
+            views[i].style.transform = "translate(" + (i - currentView + 1) * 100 + "%, 0%)";
+        }
+    }
 }
 
 function getTransformXOfView(view)
