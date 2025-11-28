@@ -295,6 +295,13 @@ NodeHandler.onReceivedE2EMessage = async function(messageNode, e2eMessage)
     }
 
     var isRevokeMessage = NodeHandler.checkForMessageDeletionNode(e2eMessage, messageId, remoteJid);
+    
+    // Add debug logging
+    if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
+        console.log("WhatsIncognito: onReceivedE2EMessage called with messageId:", messageId);
+        console.log("WhatsIncognito: e2eMessage:", e2eMessage);
+    }
+    
     await interceptViewOnceMessages(e2eMessage, messageId);
 
     if (!saveDeletedMsgsHookEnabled)

@@ -798,82 +798,207 @@ async function decryptE2EMessagesFromNode(node)
 
 async function interceptViewOnceMessages(e2eMessage, messageId) 
 {
-    if (e2eMessage.viewOnceMessageV2 !== null || e2eMessage.viewOnceMessageV2Extension !== null) 
+    if (WAdebugMode) {
+        console.log("WhatsIncognito: Checking for view-once message. messageId:", messageId);
+        console.log("WhatsIncognito: e2eMessage:", e2eMessage);
+        console.log("WhatsIncognito: e2eMessage.viewOnceMessageV2:", e2eMessage.viewOnceMessageV2);
+        console.log("WhatsIncognito: e2eMessage.viewOnceMessageV2Extension:", e2eMessage.viewOnceMessageV2Extension);
+    }
+    
+    // Check if this is a view-once message
+    const hasViewOnceV2 = e2eMessage.viewOnceMessageV2 !== null && e2eMessage.viewOnceMessageV2 !== undefined;
+    const hasViewOnceV2Extension = e2eMessage.viewOnceMessageV2Extension !== null && e2eMessage.viewOnceMessageV2Extension !== undefined;
+    
+    if (WAdebugMode) {
+        console.log("WhatsIncognito: hasViewOnceV2:", hasViewOnceV2);
+        console.log("WhatsIncognito: hasViewOnceV2Extension:", hasViewOnceV2Extension);
+    }
+    
+    if (hasViewOnceV2 || hasViewOnceV2Extension) 
     {
+        if (WAdebugMode) {
+            console.log("WhatsIncognito: Detected view-once message");
+        }
+        
         var retrievedMsg = {};
         var type = "";
-        if (e2eMessage.viewOnceMessageV2 !== null)
+        var caption = null;
+        
+        if (hasViewOnceV2)
         {
-            if (e2eMessage.viewOnceMessageV2.message.imageMessage !== null) 
+            if (WAdebugMode) {
+                console.log("WhatsIncognito: Processing viewOnceMessageV2");
+                console.log("WhatsIncognito: viewOnceMessageV2.message:", e2eMessage.viewOnceMessageV2.message);
+            }
+            
+            if (e2eMessage.viewOnceMessageV2.message.imageMessage !== null && e2eMessage.viewOnceMessageV2.message.imageMessage !== undefined) 
             {
                 retrievedMsg = e2eMessage.viewOnceMessageV2.message.imageMessage;
                 type = "image";
+                caption = retrievedMsg.caption;
+                if (WAdebugMode) {
+                    console.log("WhatsIncognito: Detected image message in viewOnceMessageV2");
+                }
             }
-            else if (e2eMessage.viewOnceMessageV2.message.videoMessage !== null) 
+            else if (e2eMessage.viewOnceMessageV2.message.videoMessage !== null && e2eMessage.viewOnceMessageV2.message.videoMessage !== undefined) 
             {
                 retrievedMsg = e2eMessage.viewOnceMessageV2.message.videoMessage;
                 type = "video";
+                caption = retrievedMsg.caption;
+                if (WAdebugMode) {
+                    console.log("WhatsIncognito: Detected video message in viewOnceMessageV2");
+                }
+            }
+            else if (e2eMessage.viewOnceMessageV2.message.documentMessage !== null && e2eMessage.viewOnceMessageV2.message.documentMessage !== undefined) 
+            {
+                retrievedMsg = e2eMessage.viewOnceMessageV2.message.documentMessage;
+                type = "document";
+                caption = retrievedMsg.caption;
+                if (WAdebugMode) {
+                    console.log("WhatsIncognito: Detected document message in viewOnceMessageV2");
+                }
             }
             else
             {
+                if (WAdebugMode) {
+                    console.log("WhatsIncognito: Unknown viewOnceMessageV2 type:", e2eMessage.viewOnceMessageV2.message);
+                }
                 throw new Error("Unknown viewOnceMessageV2 type");
             }
         }
-        else if (e2eMessage.viewOnceMessageV2Extension?.message?.audioMessage !== null) 
+        else if (hasViewOnceV2Extension)
         {
-            retrievedMsg = e2eMessage.viewOnceMessageV2Extension.message.audioMessage;
-            type = "audio";
+            if (WAdebugMode) {
+                console.log("WhatsIncognito: Processing viewOnceMessageV2Extension");
+                console.log("WhatsIncognito: viewOnceMessageV2Extension.message:", e2eMessage.viewOnceMessageV2Extension.message);
+            }
+            
+            if (e2eMessage.viewOnceMessageV2Extension.message?.audioMessage !== null && e2eMessage.viewOnceMessageV2Extension.message?.audioMessage !== undefined) 
+            {
+                retrievedMsg = e2eMessage.viewOnceMessageV2Extension.message.audioMessage;
+                type = "audio";
+                if (WAdebugMode) {
+                    console.log("WhatsIncognito: Detected audio message in viewOnceMessageV2Extension");
+                }
+            }
+            else if (e2eMessage.viewOnceMessageV2Extension.message?.imageMessage !== null && e2eMessage.viewOnceMessageV2Extension.message?.imageMessage !== undefined) 
+            {
+                retrievedMsg = e2eMessage.viewOnceMessageV2Extension.message.imageMessage;
+                type = "image";
+                caption = retrievedMsg.caption;
+                if (WAdebugMode) {
+                    console.log("WhatsIncognito: Detected image message in viewOnceMessageV2Extension");
+                }
+            }
+            else if (e2eMessage.viewOnceMessageV2Extension.message?.videoMessage !== null && e2eMessage.viewOnceMessageV2Extension.message?.videoMessage !== undefined) 
+            {
+                retrievedMsg = e2eMessage.viewOnceMessageV2Extension.message.videoMessage;
+                type = "video";
+                caption = retrievedMsg.caption;
+                if (WAdebugMode) {
+                    console.log("WhatsIncognito: Detected video message in viewOnceMessageV2Extension");
+                }
+            }
+            else 
+            {
+                if (WAdebugMode) {
+                    console.log("WhatsIncognito: Unknown viewOnceMessageV2Extension type:", e2eMessage.viewOnceMessageV2Extension?.message);
+                }
+                throw new Error("Unknown viewOnceMessageV2 or viewOnceMessageV2Extension type");
+            }
         }
-        else 
-        {
-            throw new Error("Unknown viewOnceMessageV2 or viewOnceMessageV2Extension type");
+        
+        if (WAdebugMode) {
+            console.log("WhatsIncognito: Processing view-once message of type:", type);
+            console.log("WhatsIncognito: Retrieved message:", retrievedMsg);
         }
+        
+        // Make sure we have a valid message
+        if (!retrievedMsg || Object.keys(retrievedMsg).length === 0) {
+            if (WAdebugMode) {
+                console.log("WhatsIncognito: No valid message retrieved, skipping");
+            }
+            return;
+        }
+        
+        // Check that we have the required properties
+        if (!retrievedMsg.mediaKey || !retrievedMsg.fileEncSha256 || !retrievedMsg.fileSha256 || !retrievedMsg.directPath || !retrievedMsg.mimetype) {
+            if (WAdebugMode) {
+                console.log("WhatsIncognito: Missing required properties in retrieved message:", retrievedMsg);
+            }
+            return;
+        }
+        
         const mediaKeyEncoded = btoa(String.fromCharCode.apply(null, retrievedMsg.mediaKey));
         const encodedencFileHash = btoa(String.fromCharCode.apply(null, retrievedMsg.fileEncSha256));
         const encodedfileSha256 = btoa(String.fromCharCode.apply(null, retrievedMsg.fileSha256));
         
         if (window.WhatsAppAPI !== undefined)
         {
-            const decryptedData = await WhatsAppAPI.downloadManager.downloadAndMaybeDecrypt({
-                directPath: retrievedMsg.directPath,
-                encFilehash: encodedencFileHash, filehash: encodedfileSha256, mediaKey: mediaKeyEncoded,
-                type: type, signal: (new AbortController).signal
-            });
+            try {
+                const decryptedData = await WhatsAppAPI.downloadManager.downloadAndMaybeDecrypt({
+                    directPath: retrievedMsg.directPath,
+                    encFilehash: encodedencFileHash, filehash: encodedfileSha256, mediaKey: mediaKeyEncoded,
+                    type: type, signal: (new AbortController).signal
+                });
 
-            body = arrayBufferToBase64(decryptedData);
-            dataURI = "data:" + retrievedMsg.mimetype + ";base64," + body;
-            var caption = retrievedMsg.caption;
-            // store in indexedDB called "view-once" messageID and dataURI 
-            var viewOnceDBOpenRequest = indexedDB.open("viewOnce", 2);
-            viewOnceDBOpenRequest.onupgradeneeded = function (event) {
-                const db = event.target.result;
-                var store = db.createObjectStore('msgs', { keyPath: 'id' });
-                if (WAdebugMode) {
-                    console.log('WhatsIncognito: Deleted messages database generated');
-                }
-                store.createIndex("id_index", "id");
-            };
-            viewOnceDBOpenRequest.onerror = function (e) {
-                console.error("WhatsIncognito: Error opening database");
-                console.error("Error", viewOnceDBOpenRequest);
-                console.error(e);
-            };
-            viewOnceDBOpenRequest.onsuccess = () => {
-                var viewOnceDB = viewOnceDBOpenRequest.result;
-                var viewOnceTranscation = viewOnceDB.transaction('msgs', "readwrite");
-                var viewOnceRequest = viewOnceTranscation.objectStore("msgs").add({ id: messageId, dataURI: dataURI, caption});
-                viewOnceRequest.onerror = (e) => {
-                    if (viewOnceRequest.error.name == "ConstraintError") {
+                body = arrayBufferToBase64(decryptedData);
+                dataURI = "data:" + retrievedMsg.mimetype + ";base64," + body;
+                
+                // Get sender information
+                const senderInfo = await getSenderInfo(messageId);
+                
+                // store in indexedDB called "viewOnce" with messageID and dataURI 
+                var viewOnceDBOpenRequest = indexedDB.open("viewOnce", 3); // Updated version
+                viewOnceDBOpenRequest.onupgradeneeded = function (event) {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains('msgs')) {
+                        var store = db.createObjectStore('msgs', { keyPath: 'id' });
                         if (WAdebugMode) {
-                            console.log("WhatsIncognito: Not saving message becuase the message ID already exists");
+                            console.log('WhatsIncognito: ViewOnce messages database generated');
                         }
-                    }
-
-                    else {
-                        console.warn("WhatsIncognito: Unexpected error saving deleted message");
+                        store.createIndex("id_index", "id");
+                        store.createIndex("timestamp_index", "timestamp");
                     }
                 };
-            };
+                viewOnceDBOpenRequest.onerror = function (e) {
+                    console.error("WhatsIncognito: Error opening viewOnce database");
+                    console.error("Error", viewOnceDBOpenRequest);
+                    console.error(e);
+                };
+                viewOnceDBOpenRequest.onsuccess = () => {
+                    var viewOnceDB = viewOnceDBOpenRequest.result;
+                    var viewOnceTransaction = viewOnceDB.transaction('msgs', "readwrite");
+                    var viewOnceRequest = viewOnceTransaction.objectStore("msgs").add({ 
+                        id: messageId, 
+                        dataURI: dataURI, 
+                        caption: caption,
+                        type: type,
+                        mimetype: retrievedMsg.mimetype,
+                        timestamp: Date.now(),
+                        senderInfo: senderInfo
+                    });
+                    viewOnceRequest.onerror = (e) => {
+                        if (viewOnceRequest.error.name == "ConstraintError") {
+                            if (WAdebugMode) {
+                                console.log("WhatsIncognito: Not saving viewOnce message because the message ID already exists");
+                            }
+                        }
+                        else {
+                            console.warn("WhatsIncognito: Unexpected error saving viewOnce message", e);
+                        }
+                    };
+                    viewOnceRequest.onsuccess = () => {
+                        if (WAdebugMode) {
+                            console.log("WhatsIncognito: Successfully saved viewOnce message with ID:", messageId);
+                        }
+                        // Dispatch event to notify UI
+                        document.dispatchEvent(new CustomEvent("onViewOnceMessageSaved", { detail: { messageId: messageId } }));
+                    };
+                };
+            } catch (error) {
+                console.error("WhatsIncognito: Error decrypting viewOnce message:", error);
+            }
         }
         else
         {
@@ -883,6 +1008,31 @@ async function interceptViewOnceMessages(e2eMessage, messageId)
                 interceptViewOnceMessages(e2eMessage, messageId)
             }, 5000);
         }
+    }
+    else {
+        if (WAdebugMode) {
+            console.log("WhatsIncognito: Not a view-once message or missing viewOnceMessageV2/viewOnceMessageV2Extension");
+        }
+    }
+}
+
+// Helper function to get sender information
+async function getSenderInfo(messageId) {
+    try {
+        // This is a placeholder - in a real implementation, you would extract
+        // sender information from the message context
+        return {
+            name: "Unknown Sender",
+            jid: "unknown@s.whatsapp.net",
+            timestamp: new Date().toISOString()
+        };
+    } catch (error) {
+        console.error("Error getting sender info:", error);
+        return {
+            name: "Unknown Sender",
+            jid: "unknown@s.whatsapp.net",
+            timestamp: new Date().toISOString()
+        };
     }
 }
 

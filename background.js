@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿// This is the background page.
+﻿﻿// This is the background page.
 // it keeps track of prefrences/settings in localStorage
 
 if (typeof chrome !== "undefined") {
@@ -199,153 +199,81 @@ function exportTypingLogs(format, callback) {
     });
 }
 
-// TODO: We need to remove this bad code dupliation
+// Default options
+var defaultOptions = {
+    readConfirmationsHook: true,
+    onlineUpdatesHook: false,
+    typingUpdatesHook: false,
+    safetyDelay: 0,
+    saveDeletedMsgs: true,
+    showDeviceTypes: true,
+    autoReceiptOnReplay: true,
+    allowStatusDownload: true,
+    typingNotifications: false,
+    stayOnline: false
+};
+
+// Load options from storage
+browser.runtime.onInstalled.addListener(function (details)
+{
+    if (details.reason == "install")
+    {
+        // Set default options on install
+        browser.storage.local.set({ options: defaultOptions }, function ()
+        {
+            console.log("[Background] Default options set");
+        });
+    }
+    else if (details.reason == "update")
+    {
+        // Update options if needed
+        browser.storage.local.get("options", function (result)
+        {
+            var options = result.options || {};
+            var updated = false;
+            
+            // Add any new options that might be missing
+            for (var key in defaultOptions) {
+                if (options[key] === undefined) {
+                    options[key] = defaultOptions[key];
+                    updated = true;
+                }
+            }
+            
+            if (updated) {
+                browser.storage.local.set({ options: options }, function ()
+                {
+                    console.log("[Background] Options updated");
+                });
+            }
+        });
+    }
+});
+
 browser.runtime.onMessage.addListener(function (messageEvent, sender, callback)
 {
-    // Log incoming messages for debugging
-    if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
-        console.log("[Background] Received message:", messageEvent);
-    }
-    
-    if (messageEvent.name == "setOptions")
-    {
-        if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
-            console.log("[Background] Processing setOptions");
-        }
-        if ("onlineUpdatesHook" in messageEvent)
-		{
-            chrome.storage.local.set({"onlineUpdatesHook": messageEvent.onlineUpdatesHook});
-		}
-        if ("typingUpdatesHook" in messageEvent)
-		{
-            chrome.storage.local.set({"typingUpdatesHook": messageEvent.typingUpdatesHook});
-		}
-		if ("readConfirmationsHook" in messageEvent)
-		{
-            chrome.storage.local.set({"readConfirmationsHook": messageEvent.readConfirmationsHook});
-		}
-		if ("safetyDelay" in messageEvent)
-		{
-            chrome.storage.local.set({"safetyDelay": messageEvent.safetyDelay});
-        }
-        if ("showReadWarning" in messageEvent)
-        {
-            chrome.storage.local.set({"showReadWarning": messageEvent.showReadWarning});
-        }
-        if ("saveDeletedMsgs" in messageEvent)
-        {
-            chrome.storage.local.set({"saveDeletedMsgs": messageEvent.saveDeletedMsgs});
-        }
-        if ("showDeviceTypes" in messageEvent)
-        {
-            chrome.storage.local.set({"showDeviceTypes": messageEvent.showDeviceTypes});
-        }
-        if ("autoReceiptOnReplay" in messageEvent)
-        {
-            chrome.storage.local.set({"autoReceiptOnReplay": messageEvent.autoReceiptOnReplay});
-        }
-        if ("allowStatusDownload" in messageEvent)
-        {
-            chrome.storage.local.set({"allowStatusDownload": messageEvent.allowStatusDownload});
-        }
-        if ("typingNotifications" in messageEvent)
-        {
-            chrome.storage.local.set({"typingNotifications": messageEvent.typingNotifications});
-        }
-        if ("stayOnline" in messageEvent)
-        {
-            chrome.storage.local.set({"stayOnline": messageEvent.stayOnline});
-        }
-    }
-    else if (messageEvent.name == "getOptions")
+    if (messageEvent.name == "getOptions")
     {
         if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
             console.log("[Background] Processing getOptions");
         }
-        // these are the default values. we will update them according to the storage
-		var onlineUpdatesHook = false;
-        var typingUpdatesHook = false;
-        var readConfirmationsHook = true;
-        var showReadWarning = true;
-		var safetyDelay = 0;
-        var saveDeletedMsgs = false;
-        var showDeviceTypes = true;
-        var autoReceiptOnReplay = true;
-        var allowStatusDownload = true;
-        var typingNotifications = false;
-        var stayOnline = false;
-
-        chrome.storage.local.get(['onlineUpdatesHook',
-                                'typingUpdatesHook',
-                                'readConfirmationsHook', 
-                                'showReadWarning', 
-                                'safetyDelay', 
-                                'saveDeletedMsgs', 
-                                'showDeviceTypes',
-                                'autoReceiptOnReplay',
-                                'allowStatusDownload',
-                                'typingNotifications',
-                                'stayOnline']).then(function(storage)
+        browser.storage.local.get("options", function (result)
         {
-            if (storage["onlineUpdatesHook"] != undefined)
-            {
-                onlineUpdatesHook = storage["onlineUpdatesHook"];
-            }
-            if (storage["typingUpdatesHook"] != undefined)
-            {
-                typingUpdatesHook = storage["typingUpdatesHook"];
-            }
-            if (storage["readConfirmationsHook"] != undefined)
-            {
-                readConfirmationsHook = storage["readConfirmationsHook"];
-            }
-            if (storage["showReadWarning"] != undefined)
-            {
-                showReadWarning = storage["showReadWarning"];
-            }
-            if (storage["safetyDelay"] != undefined)
-            {
-                safetyDelay = storage["safetyDelay"];
-            }
-            if (storage["saveDeletedMsgs"] != undefined)
-            {
-                saveDeletedMsgs = storage["saveDeletedMsgs"];
-            }
-            if (storage["showDeviceTypes"] != undefined)
-            {
-                showDeviceTypes = storage["showDeviceTypes"];
-            }
-            if (storage["autoReceiptOnReplay"] != undefined)
-            {
-                autoReceiptOnReplay = storage["autoReceiptOnReplay"];
-            }
-            if (storage["allowStatusDownload"] != undefined)
-            {
-                allowStatusDownload = storage["allowStatusDownload"];
-            }
-            if (storage["typingNotifications"] != undefined)
-            {
-                typingNotifications = storage["typingNotifications"];
-            }
-            if (storage["stayOnline"] != undefined)
-            {
-                stayOnline = storage["stayOnline"];
-            }
-            callback(
-            {
-                onlineUpdatesHook: onlineUpdatesHook,
-                typingUpdatesHook: typingUpdatesHook,
-                readConfirmationsHook: readConfirmationsHook,
-                showReadWarning: showReadWarning,
-                safetyDelay: safetyDelay,
-                saveDeletedMsgs: saveDeletedMsgs,
-                showDeviceTypes: showDeviceTypes,
-                autoReceiptOnReplay: autoReceiptOnReplay,
-                allowStatusDownload: allowStatusDownload,
-                typingNotifications: typingNotifications,
-                stayOnline: stayOnline
-            });
-        });   
+            var options = result.options || defaultOptions;
+            callback(options);
+        });
+        return true; // Keep callback alive
+    }
+    else if (messageEvent.name == "setOptions")
+    {
+        if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
+            console.log("[Background] Processing setOptions");
+        }
+        browser.storage.local.set({ options: messageEvent }, function ()
+        {
+            callback({});
+        });
+        return true; // Keep callback alive
     }
     else if (messageEvent.name == "storeTypingLog")
     {
