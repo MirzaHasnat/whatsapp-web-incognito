@@ -4,9 +4,19 @@
 
 // Function to create and inject the activity logs button
 function injectActivityLogsButton() {
+    console.log('[WAIncognito] Attempting to inject activity logs button');
+    
     // Check if button already exists
     if (document.getElementById('whatsapp-activity-logs-button')) {
+        console.log('[WAIncognito] Activity logs button already exists');
         return;
+    }
+    
+    // Check if the function is available
+    if (typeof window.showWhatsAppActivityLogs === 'function') {
+        console.log('[WAIncognito] showWhatsAppActivityLogs function is available');
+    } else {
+        console.log('[WAIncognito] showWhatsAppActivityLogs function is NOT available yet');
     }
     
     // Create the floating button
@@ -16,13 +26,10 @@ function injectActivityLogsButton() {
     
     // Add click handler
     button.addEventListener('click', function() {
+        console.log('[WAIncognito] Activity logs button clicked');
         // Call the function that exists in the main world context
-        if (typeof window.showWhatsAppActivityLogs === 'function') {
-            window.showWhatsAppActivityLogs();
-        } else {
-            // Show error if function is not available
-            alert('Activity logs function is not available. Please refresh the page.');
-        }
+        // Add a retry mechanism in case the function isn't available immediately
+        callShowWhatsAppActivityLogs();
     });
     
     // Create icon inside button (using emoji for simplicity)
@@ -43,6 +50,39 @@ function injectActivityLogsButton() {
     
     // Add to document
     document.body.appendChild(button);
+    console.log('[WAIncognito] Activity logs button injected successfully');
+}
+
+// Function to call showWhatsAppActivityLogs with retry mechanism
+function callShowWhatsAppActivityLogs() {
+    console.log('[WAIncognito] Checking for showWhatsAppActivityLogs function');
+    if (typeof window.showWhatsAppActivityLogs === 'function') {
+        console.log('[WAIncognito] showWhatsAppActivityLogs function found, calling it');
+        window.showWhatsAppActivityLogs();
+    } else {
+        console.log('[WAIncognito] showWhatsAppActivityLogs function not found, retrying...');
+        // Try again after a short delay (in case interception.js is still loading)
+        setTimeout(function() {
+            console.log('[WAIncognito] Retrying showWhatsAppActivityLogs (attempt 2)');
+            if (typeof window.showWhatsAppActivityLogs === 'function') {
+                console.log('[WAIncognito] showWhatsAppActivityLogs function found on retry, calling it');
+                window.showWhatsAppActivityLogs();
+            } else {
+                // Try one more time with a longer delay
+                setTimeout(function() {
+                    console.log('[WAIncognito] Retrying showWhatsAppActivityLogs (attempt 3)');
+                    if (typeof window.showWhatsAppActivityLogs === 'function') {
+                        console.log('[WAIncognito] showWhatsAppActivityLogs function found on second retry, calling it');
+                        window.showWhatsAppActivityLogs();
+                    } else {
+                        console.log('[WAIncognito] showWhatsAppActivityLogs function still not available');
+                        // Show error if function is still not available
+                        alert('Activity logs function is not available. Please refresh the page.');
+                    }
+                }, 2000);
+            }
+        }, 1000);
+    }
 }
 
 // Watch for when the main UI is ready and inject our button
@@ -51,10 +91,8 @@ document.addEventListener('onMainUIReady', function (e) {
     setTimeout(function() {
         injectActivityLogsButton();
     }, 1000);
-});
-
-document.addEventListener('onMainUIReady', function (e)
-{
+    
+    // Also expose WhatsApp API
     setTimeout(exposeWhatsAppAPI, 100);
 });
 

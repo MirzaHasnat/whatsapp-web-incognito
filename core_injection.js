@@ -17,12 +17,14 @@ async function injectOtherScripts()
 
 	injectScript('core/utils.js');
 	injectScript('core/ui_class_names.js');
+	
+	// Load interception.js before injected_ui.js to ensure window.showWhatsAppActivityLogs is available
+	await injectScript('core/interception.js');
 	injectScript('core/injected_ui.js');
 	injectScript('core/wpp_utils.js');
 	
 	await injectScript('core/multi_device.js');
 	await injectScript('core/node_handler.js');
-	injectScript('core/interception.js');
 
 	setTimeout(
 		function() {injectScript('lib/moduleraid.js');},

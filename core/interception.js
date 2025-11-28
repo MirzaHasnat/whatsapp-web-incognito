@@ -32,6 +32,7 @@ window.loadAllChatsAndLog = function() {
     return loadAllChatsAndLog();
 };
 window.showWhatsAppActivityLogs = function() {
+    console.log('[WAIncognito] showWhatsAppActivityLogs function called');
     // Create modal container
     var modal = document.createElement('div');
     modal.id = 'whatsapp-logs-modal';
@@ -2533,3 +2534,6 @@ window.testLoadAllChats = function(limit) {
     
     return chats;
 };
+
+// Log that interception.js has finished loading
+console.log('[WAIncognito] interception.js loaded and functions exposed to window object');
