@@ -14,8 +14,51 @@ window.OnlineTracker = {
     addTrackedUser: addTrackedUser,
     removeTrackedUser: removeTrackedUser,
     isTrackedUser: isTrackedUser,
-    subscribeToPresence: subscribeToPresence
+    subscribeToPresence: subscribeToPresence,
+    getSessionsFromLogs: getSessionsFromLogs
 };
+
+function getSessionsFromLogs(jid, logs) {
+    if (!logs) logs = getLogs();
+
+    // Filter for specific user
+    var userLogs = logs.filter(l => l.jid === jid || l.userName === jid);
+    userLogs.sort((a, b) => a.timestamp - b.timestamp);
+
+    var sessions = [];
+    var currentSession = null;
+
+    userLogs.forEach(function (log) {
+        if (log.status === 'online') {
+            if (!currentSession) {
+                currentSession = { start: log.timestamp, end: null };
+            }
+        } else if (log.status === 'offline') {
+            if (currentSession) {
+                currentSession.end = log.timestamp;
+                sessions.push(currentSession);
+                currentSession = null;
+            } else {
+                // Offline without online start? Maybe started before logs began?
+                // Or we can assume it started recently if we have metadata.duration
+                if (log.metadata && log.metadata.duration) {
+                    sessions.push({
+                        start: log.timestamp - log.metadata.duration,
+                        end: log.timestamp
+                    });
+                }
+            }
+        }
+    });
+
+    // If still online (no offline event yet)
+    if (currentSession) {
+        currentSession.end = Date.now();
+        sessions.push(currentSession);
+    }
+
+    return sessions;
+}
 
 async function checkForOnlinePresence(node) {
     // We are looking for presence nodes
@@ -28,21 +71,21 @@ async function checkForOnlinePresence(node) {
             console.log("[OnlineTracker] Received presence node from:", jid, "Type:", type);
         }
 
-        console.warn("[OnlineTracker] DEBUG: Processing presence for:", jid, "Type:", type);
+
 
         if (type === "unavailable") {
             status = "offline";
         }
+
+        // Extract 'last' attribute for Last Seen info (usually seconds or timestamp)
+        var lastSeen = node.attrs.last;
 
         if (jid) {
             // Handle JID formatting
             var originalJidObj = jid;
             jid = typeof jid === 'object' ? jid.toString() : jid; // Ensure string
 
-            // LOG TRACKED USERS FOR DEBUGGING
-            if (Math.random() < 0.05) { // Log occasionally to avoid spam
-                console.warn("[OnlineTracker] DEBUG: Current Tracked Users:", JSON.stringify(getTrackedUsers()));
-            }
+
 
             if (jid.includes('@')) {
                 jid = jid.split('/')[0];
@@ -55,23 +98,23 @@ async function checkForOnlinePresence(node) {
             if (!canonicalJid && jid.includes('lid')) {
                 var pnJid = await resolveLidToPn(jid);
                 if (pnJid) {
-                    console.warn("[OnlineTracker] DEBUG: Resolved LID:", jid, "->", pnJid);
+                    if (typeof WAdebugMode !== 'undefined' && WAdebugMode) console.log("[OnlineTracker] Resolved LID:", jid, "->", pnJid);
                     // Check tracking again with the resolved PN JID
                     canonicalJid = getCanonicalTrackedJID(pnJid);
                 } else {
-                    console.warn("[OnlineTracker] DEBUG: Could not resolve LID:", jid);
-                    if (typeof window.Store === 'undefined') console.warn("[OnlineTracker] DEBUG: window.Store is undefined");
+                    if (typeof WAdebugMode !== 'undefined' && WAdebugMode) console.log("[OnlineTracker] Could not resolve LID:", jid);
+                    if (typeof window.Store === 'undefined' && typeof WAdebugMode !== 'undefined' && WAdebugMode) console.log("[OnlineTracker] window.Store is undefined");
                 }
             } else if (jid.includes('lid')) {
-                console.warn("[OnlineTracker] DEBUG: LID matched directly?!", jid);
+                if (typeof WAdebugMode !== 'undefined' && WAdebugMode) console.log("[OnlineTracker] LID matched directly?!", jid);
             }
 
             if (canonicalJid) {
-                console.warn("[OnlineTracker] DEBUG: Matched tracked user:", jid, "=>", canonicalJid, "Status:", status);
+
                 if (typeof WAdebugMode !== 'undefined' && WAdebugMode) console.log("[OnlineTracker] Matched tracked user:", jid, "->", canonicalJid);
-                await handlePresenceUpdate(canonicalJid, status);
+                await handlePresenceUpdate(canonicalJid, status, lastSeen);
             } else {
-                console.warn("[OnlineTracker] DEBUG: User NOT matched in tracker:", jid);
+
                 if (typeof WAdebugMode !== 'undefined' && WAdebugMode) console.log("[OnlineTracker] Ignoring non-tracked user:", jid);
             }
         }
@@ -129,12 +172,12 @@ async function resolveLidToPn(lid) {
     return null;
 }
 
-async function handlePresenceUpdate(jid, status) {
+async function handlePresenceUpdate(jid, status, lastSeen) {
     // Prevent duplicate consecutive logs
     var lastStatus = getLastKnownStatus(jid);
     var timestamp = Date.now();
 
-    console.warn("[OnlineTracker] DEBUG: handlePresenceUpdate for:", jid, "Status:", status, "Last:", lastStatus.status);
+
 
     // If status changed or it's been a long time (e.g. 1 hour)
     if (lastStatus.status !== status || (timestamp - lastStatus.timestamp > 3600000)) {
@@ -153,15 +196,32 @@ async function handlePresenceUpdate(jid, status) {
             if (wppName) userName = wppName;
         }
 
-        storeOnlineStatusLog(jid, status, timestamp, null, userName);
+        // Calculate duration since last update (if status changed)
+        // usage: Online -> Offline (duration is how long they were online)
+        // duration is in ms
+        var duration = null;
+        if (lastStatus.timestamp > 0) {
+            duration = timestamp - lastStatus.timestamp;
+        }
+
+        var metadata = {};
+        if (duration) {
+            metadata.duration = duration;
+            metadata.previousStatus = lastStatus.status;
+        }
+        if (lastSeen) {
+            metadata.lastSeen = lastSeen;
+        }
+
+        storeOnlineStatusLog(jid, status, timestamp, metadata, userName);
         updateLastKnownStatus(jid, status, timestamp);
     } else {
-        console.warn("[OnlineTracker] DEBUG: Status skipped (duplicate)");
+
     }
 }
 
 function storeOnlineStatusLog(jid, status, timestamp, metadata, userName) {
-    console.warn("[OnlineTracker] DEBUG: Saving log for:", jid, "Status:", status);
+
     var logEntry = {
         id: Date.now() + Math.random().toString(36).substr(2, 5),
         jid: jid,

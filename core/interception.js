@@ -205,7 +205,7 @@ window.showWhatsAppActivityLogs = function () {
             updateStats();
 
             // Update footer buttons based on view
-            if (currentView === 'online') {
+            if (currentView === 'online' || currentView === 'timeline') {
                 if (tabFilterSelect) tabFilterSelect.style.display = 'none';
                 if (exclusionsButton) exclusionsButton.textContent = 'Manage Tracked Users';
             } else {
@@ -216,14 +216,17 @@ window.showWhatsAppActivityLogs = function () {
         return tab;
     }
 
-    var typingTab, onlineTab;
+    var typingTab, onlineTab, timelineTab;
 
     function updateTabs() {
         tabsContainer.innerHTML = '';
         typingTab = createTab('Typing Activity', 'typing', currentView === 'typing');
         onlineTab = createTab('Online Tracker', 'online', currentView === 'online');
+        timelineTab = createTab('Timeline', 'timeline', currentView === 'timeline');
+
         tabsContainer.appendChild(typingTab);
         tabsContainer.appendChild(onlineTab);
+        tabsContainer.appendChild(timelineTab);
     }
 
     updateTabs();
@@ -952,30 +955,67 @@ window.showWhatsAppActivityLogs = function () {
                         var statusColor = log.status === 'online' ? '#28a745' : ((log.status === 'offline' || log.status === 'unavailable') ? '#6c757d' : '#dc3545');
                         var statusText = log.status.toUpperCase();
 
-                        var gapText = '';
+                        var metadataText = '';
                         if (log.metadata) {
-                            gapText = `<span style="font-size: 12px; color: #d63384; margin-left: 8px;">(Gap: ${Math.round(log.metadata / 1000)}s)</span>`;
+                            // 1. Duration logic
+                            if (log.metadata.duration) {
+                                var d = log.metadata.duration;
+                                var durStr = '';
+                                if (d > 3600000) durStr += Math.floor(d / 3600000) + 'h ';
+                                if (d > 60000) durStr += Math.floor((d % 3600000) / 60000) + 'm ';
+                                durStr += Math.floor((d % 60000) / 1000) + 's';
+
+                                var prevStatus = log.metadata.previousStatus ? log.metadata.previousStatus.toUpperCase() : 'PREV';
+                                metadataText += `<div style="font-size: 13px; color: #667781; margin-top: 2px;">
+                                                Duration (${prevStatus}): <span style="font-weight: 500; color: #3b4a54;">${durStr}</span>
+                                             </div>`;
+                            } else if (log.metadata.gap) {
+                                // Legacy gap handling or specific gap field
+                                metadataText += `<span style="font-size: 12px; color: #d63384; margin-left: 8px;">(Gap: ${Math.round(log.metadata.gap / 1000)}s)</span>`;
+                            }
+
+                            // 2. Last Seen logic
+                            if (log.metadata.lastSeen) {
+                                var lastSeenDate = new Date(parseInt(log.metadata.lastSeen) * 1000); // Usually unix timestamp in seconds
+                                // If it's a very small number, might be seconds ago? No, usually absolute timestamp.
+                                // Sometimes it's string "1765..." check logic.
+                                if (log.metadata.lastSeen > 1000000000000) {
+                                    // already ms
+                                    lastSeenDate = new Date(parseInt(log.metadata.lastSeen));
+                                }
+
+                                metadataText += `<div style="font-size: 13px; color: #667781; margin-top: 2px;">
+                                                Last Seen: <span style="font-weight: 500; color: #3b4a54;">${lastSeenDate.toLocaleString()}</span>
+                                             </div>`;
+                            }
                         } else if (log.status === 'gap') {
                             statusColor = '#dc3545';
                         }
 
                         html += `
-                           <div style="border-bottom: 1px solid #e0e0e0; padding: 12px 0;">
-                               <div style="display: flex; justify-content: space-between;">
-                                    <div>
-                                        <div style="font-weight: 600; font-size: 16px; color: #3b4a54;">${log.userName || log.jid} <span style="font-size: 12px; color: #888; font-weight: 400;">${log.userName ? log.jid : ''}</span></div>
-                                        <div style="margin-top: 4px;">
-                                           <span style="background-color: ${statusColor}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px;">${statusText}</span>
-                                           <span style="font-size: 12px; color: #666; margin-left: 8px;">${timeStr}</span>
-                                           ${gapText}
-                                        </div>
+                       <div style="border-bottom: 1px solid #e0e0e0; padding: 12px 0;">
+                           <div style="display: flex; justify-content: space-between;">
+                                <div>
+                                    <div style="font-weight: 600; font-size: 16px; color: #3b4a54;">${log.userName || log.jid} <span style="font-size: 12px; color: #888; font-weight: 400;">${log.userName ? log.jid : ''}</span></div>
+                                    <div style="margin-top: 4px;">
+                                       <span style="background-color: ${statusColor}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px;">${statusText}</span>
+                                       <span style="font-size: 12px; color: #666; margin-left: 8px;">${timeStr}</span>
+                                       ${metadataText}
                                     </div>
-                               </div>
+                                </div>
                            </div>
-                        `;
+                       </div>
+                    `;
                     });
                     html += '</div>';
                     contentElement.innerHTML = html;
+                }, 10);
+                return;
+            }
+
+            if (currentView === 'timeline') {
+                setTimeout(function () {
+                    renderTimelineView(contentElement);
                 }, 10);
                 return;
             }
@@ -1246,10 +1286,9 @@ wsHook.after = function (messageEvent, url) {
 
                 // Check for online presence updates
                 try {
-                    if (realNode.tag === "presence") {
-                        console.warn("[Interception] DEBUG: Intercepted presence node", realNode.attrs ? realNode.attrs.from : "unknown");
+                    if (typeof window.checkForOnlinePresence === 'function') {
+                        await window.checkForOnlinePresence(realNode);
                     }
-                    await checkForOnlinePresence(realNode);
                 } catch (error) {
                     console.error("Error processing presence update:", error);
                 }
@@ -3256,3 +3295,295 @@ document.addEventListener('onShowOnlineTracker', function () {
 
 // Log that interception.js has finished loading
 console.log('[WAIncognito] interception.js loaded and functions exposed to window object');
+
+// ==========================================
+// Timeline View Implementation
+// ==========================================
+
+// ==========================================
+// Timeline View Implementation
+// ==========================================
+
+var selectedTimelineUsers = new Set();
+var timelineRangeDays = 1;
+var timelineZoomLevel = 1;
+
+async function resolveName(jid) {
+    if (!jid) return "Unknown";
+    var name = jid.split('@')[0];
+
+    try {
+        // 1. LID Handling: If it looks like an LID, resolve to PN JID if possible
+        if (jid.includes('lid') || jid.length > 25) {
+            if (typeof window.Store !== 'undefined' && window.Store.Contact) {
+                var models = window.Store.Contact.models || window.Store.Contact.getModelsArray();
+                var found = models.find(c => c.lid && c.lid._serialized === jid);
+                if (found) {
+                    return found.pushname || found.name || found.brief || found.verifiedName || found.formattedName || name;
+                }
+            }
+        }
+
+        // 2. Try common global helpers
+        if (typeof window.getContactName === 'function') {
+            var n = await window.getContactName(jid);
+            if (n) return n;
+        }
+
+        // 3. Try Store.Contact
+        if (typeof window.Store !== 'undefined' && window.Store.Contact) {
+            var contact = window.Store.Contact.get(jid);
+            if (contact) {
+                return contact.pushname || contact.name || contact.verifiedName || contact.formattedName || contact.displayName || contact.formattedTitle || name;
+            }
+        }
+
+        // 4. WPP Fallback
+        if (typeof WPP !== 'undefined' && WPP.contact) {
+            var c = await WPP.contact.get(jid);
+            if (c) {
+                return c.pushname || c.name || c.shortName || name;
+            }
+        }
+
+    } catch (e) { console.error("Name resolution error:", e); }
+
+    // If still just a number, try formatting
+    if (!isNaN(name) && name.length > 6) {
+        return '+' + name;
+    }
+
+    return name;
+}
+
+async function renderTimelineView(container) {
+    var trackedUsers = window.OnlineTracker.getTrackedUsers();
+
+    if (trackedUsers.length === 0) {
+        container.innerHTML = `
+            <div style="display: flex; justify-content: center; align-items: center; height: 200px;">
+                <div style="text-align: center; color: #667781;">
+                    <h3 style="margin: 0 0 8px; font-weight: 500; color: #54656f;">No Tracked Users</h3>
+                    <p style="margin: 0; font-size: 14px;">Add users to the Online Tracker to see their timeline.</p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    // Resolve all names first
+    var userNames = {};
+    for (var jid of trackedUsers) {
+        userNames[jid] = await resolveName(jid);
+    }
+    window._timelineNames = userNames;
+
+    // Header with User Selection
+    var html = `
+        <div style="padding: 16px 0;">
+            <div style="margin-bottom: 20px; padding: 10px; background: #f0f2f5; border-radius: 8px;">
+                <div style="font-weight: 500; margin-bottom: 8px; font-size: 14px; color: #54656f !important;">Select Users to Compare:</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 10px; max-height: 100px; overflow-y: auto;">
+    `;
+
+    trackedUsers.forEach(jid => {
+        var isChecked = selectedTimelineUsers.has(jid) ? 'checked' : '';
+        if (selectedTimelineUsers.size === 0 && trackedUsers.indexOf(jid) < 3) {
+            selectedTimelineUsers.add(jid);
+            isChecked = 'checked';
+        }
+
+        var name = userNames[jid];
+
+        html += `
+            <label style="display: flex; align-items: center; cursor: pointer; background: white !important; padding: 4px 8px; border-radius: 4px; border: 1px solid #ddd; margin-bottom: 4px; isolation: isolate;">
+                <input type="checkbox" class="timeline-user-checkbox" value="${jid}" ${isChecked} style="margin-right: 6px; cursor: pointer;">
+                <span style="font-size: 13px; color: #111b21 !important; font-weight: 500; text-shadow: none !important;">${name}</span>
+            </label>
+        `;
+    });
+
+    html += `
+                </div>
+            </div>
+            
+            <!-- Controls Toolbar -->
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; padding: 0 5px;">
+                <div style="display: flex; align-items: center; gap: 15px;">
+                   <div style="display: flex; align-items: center;">
+                       <span style="font-size: 13px; color: #41525d; margin-right: 8px;">Range:</span>
+                       <select id="timeline-range-select" style="padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; cursor: pointer; color: #111b21 !important; background-color: white !important;">
+                           <option value="1" ${timelineRangeDays == 1 ? 'selected' : ''}>last 24 Hours</option>
+                           <option value="3" ${timelineRangeDays == 3 ? 'selected' : ''}>last 3 Days</option>
+                           <option value="7" ${timelineRangeDays == 7 ? 'selected' : ''}>last 7 Days</option>
+                           <option value="30" ${timelineRangeDays == 30 ? 'selected' : ''}>last 30 Days</option>
+                       </select>
+                   </div>
+                   <div style="display: flex; align-items: center;">
+                       <span style="font-size: 13px; color: #41525d; margin-right: 8px;">Zoom:</span>
+                       <input type="range" id="timeline-zoom-slider" min="1" max="10" step="0.5" value="${timelineZoomLevel}" style="width: 100px; cursor: pointer;">
+                       <span id="timeline-zoom-val" style="font-size: 11px; color: #111b21 !important; width: 30px; text-align: right;">${timelineZoomLevel}x</span>
+                   </div>
+                </div>
+                <div style="font-size: 12px; color: #888;">
+                   Scroll to view past &#8592;
+                </div>
+            </div>
+
+            <div id="timeline-graph-container" style="background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px 20px 10px 20px; overflow-x: auto; overflow-y: hidden;">
+                <!-- Graph will be injected here -->
+            </div>
+        </div>
+    `;
+
+    container.innerHTML = html;
+
+    // Bind checkbox events
+    var checkboxes = container.querySelectorAll('.timeline-user-checkbox');
+    checkboxes.forEach(cb => {
+        cb.onchange = function () {
+            if (this.checked) selectedTimelineUsers.add(this.value);
+            else selectedTimelineUsers.delete(this.value);
+            drawTimelineGraph(document.getElementById('timeline-graph-container'));
+        };
+    });
+
+    // Bind Control events
+    var rangeSelect = document.getElementById('timeline-range-select');
+    if (rangeSelect) {
+        rangeSelect.onchange = function () {
+            timelineRangeDays = parseInt(this.value);
+            drawTimelineGraph(document.getElementById('timeline-graph-container'));
+        };
+    }
+
+    var zoomSlider = document.getElementById('timeline-zoom-slider');
+    var zoomVal = document.getElementById('timeline-zoom-val');
+    if (zoomSlider) {
+        zoomSlider.oninput = function () {
+            timelineZoomLevel = parseFloat(this.value);
+            if (zoomVal) zoomVal.textContent = timelineZoomLevel + 'x';
+            drawTimelineGraph(document.getElementById('timeline-graph-container'));
+        };
+    }
+
+    // Initial Draw
+    drawTimelineGraph(document.getElementById('timeline-graph-container'));
+}
+
+function drawTimelineGraph(container) {
+    if (!container) return;
+    if (selectedTimelineUsers.size === 0) {
+        container.innerHTML = '<div style="text-align: center; color: #888; padding: 40px;">Select users to view timeline</div>';
+        return;
+    }
+
+    var users = Array.from(selectedTimelineUsers);
+    var now = Date.now();
+    var durationMs = timelineRangeDays * 24 * 60 * 60 * 1000;
+    var startTime = now - durationMs;
+
+    // Get all sessions
+    var allSessions = {};
+    users.forEach(jid => {
+        allSessions[jid] = window.OnlineTracker.getSessionsFromLogs(jid);
+    });
+
+    // Calculate layout
+    var minWidthPercent = 100 * timelineZoomLevel;
+
+    // Generate Time Axis Labels
+    var axisLabelsHtml = '';
+    var steps = 5 * timelineZoomLevel; // More steps if zoomed
+    if (steps > 12) steps = 12; // cap max labels
+
+    for (var i = 0; i <= steps; i++) {
+        var t = startTime + (durationMs * (i / steps));
+        var labelDate = new Date(t);
+        var labelStr;
+
+        if (timelineRangeDays <= 1) {
+            labelStr = labelDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        } else {
+            labelStr = labelDate.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' + labelDate.toLocaleTimeString([], { hour: '2-digit' });
+        }
+
+        var leftPos = (i / steps) * 100;
+        axisLabelsHtml += `<span style="position: absolute; left: ${leftPos}%; transform: translateX(-50%); font-size: 11px; color: #667781; white-space: nowrap;">${labelStr}</span>`;
+    }
+
+
+    var graphHtml = `
+        <div style="position: relative; min-width: 100%; width: ${minWidthPercent}%;">
+            <!-- Time Axis -->
+            <div style="position: relative; height: 25px; border-bottom: 1px solid #ccc; margin-bottom: 15px; margin-left: 120px;">
+                ${axisLabelsHtml}
+            </div>
+    `;
+
+    users.forEach(jid => {
+        var sessions = allSessions[jid];
+        var name = (window._timelineNames && window._timelineNames[jid]) || jid.split('@')[0];
+
+        graphHtml += `
+            <div style="display: flex; align-items: center; margin-bottom: 15px; height: 30px;">
+                <div style="position: sticky; left: 0; width: 120px; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 15px; text-align: right; background: white; z-index: 2; color: #111b21 !important;" title="${jid}">
+                    ${name}
+                </div>
+                <div style="flex: 1; position: relative; height: 20px; background: #f5f5f5; border-radius: 4px; overflow: hidden;">
+                   <!-- Grid lines -->
+                   <div style="position: absolute; top:0; left:0; width: 100%; height: 100%; pointer-events: none;">
+                       ${[0.2, 0.4, 0.6, 0.8].map(p => `<div style="position: absolute; left: ${p * 100}%; height: 100%; border-left: 1px dashed #e0e0e0;"></div>`).join('')}
+                   </div>
+        `;
+
+        sessions.forEach(session => {
+            var s = Math.max(session.start, startTime);
+            var e = Math.min(session.end || now, now);
+
+            if (e > s) {
+                var left = ((s - startTime) / durationMs) * 100;
+                var width = ((e - s) / durationMs) * 100;
+
+                var color = '#00a884'; // WhatsApp Dark Green
+                var startTimeStr = new Date(session.start).toLocaleString();
+                var endTimeStr = session.end ? new Date(session.end).toLocaleString() : "Now";
+
+                graphHtml += `
+                    <div style="
+                        position: absolute; 
+                        left: ${left}%; 
+                        width: ${width}%; 
+                        height: 100%; 
+                        background-color: ${color};
+                        border-right: 1px solid rgba(255,255,255,0.4); 
+                        cursor: help;"
+                        title="${name}\nOnline: ${startTimeStr}\nUntil: ${endTimeStr}\nDuration: ${session.end ? formatDuration(session.end - session.start) : 'Active'}"
+                    ></div>
+                `;
+            }
+        });
+
+        graphHtml += `
+                </div>
+            </div>
+        `;
+    });
+
+    graphHtml += '</div>';
+    container.innerHTML = graphHtml;
+
+    if (minWidthPercent > 100 && container.scrollLeft === 0) {
+        // container.scrollLeft = container.scrollWidth; // Optional
+    }
+}
+
+function formatDuration(ms) {
+    if (ms < 1000) return ms + "ms";
+    var s = Math.floor(ms / 1000);
+    if (s < 60) return s + "s";
+    var m = Math.floor(s / 60);
+    if (m < 60) return m + "m " + (s % 60) + "s";
+    var h = Math.floor(m / 60);
+    return h + "h " + (m % 60) + "m";
+}
