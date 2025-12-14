@@ -994,7 +994,7 @@ window.showWhatsAppActivityLogs = function () {
 
                         html += `
                        <div style="border-bottom: 1px solid #e0e0e0; padding: 12px 0;">
-                           <div style="display: flex; justify-content: space-between;">
+                           <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                                 <div>
                                     <div style="font-weight: 600; font-size: 16px; color: #3b4a54;">${log.userName || log.jid} <span style="font-size: 12px; color: #888; font-weight: 400;">${log.userName ? log.jid : ''}</span></div>
                                     <div style="margin-top: 4px;">
@@ -1003,12 +1003,34 @@ window.showWhatsAppActivityLogs = function () {
                                        ${metadataText}
                                     </div>
                                 </div>
+                                
+                                <button class="delete-log-btn" data-log-id="${log.id}" title="Delete this log" style="background: none; border: none; cursor: pointer; color: #dc3545; padding: 8px; border-radius: 4px; transition: background 0.2s;">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                                        <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                                    </svg>
+                                </button>
                            </div>
                        </div>
                     `;
                     });
                     html += '</div>';
                     contentElement.innerHTML = html;
+
+                    contentElement.onclick = function (e) {
+                        var deleteBtn = e.target.closest('.delete-log-btn');
+                        if (deleteBtn) {
+                            if (confirm('Are you sure you want to delete this log?')) {
+                                var logId = deleteBtn.getAttribute('data-log-id');
+                                if (logId) {
+                                    if (window.OnlineTracker.deleteLog(logId)) {
+                                        // Refresh logs
+                                        displayLogs(filters);
+                                        updateStats();
+                                    }
+                                }
+                            }
+                        }
+                    };
                 }, 10);
                 return;
             }
@@ -1032,7 +1054,7 @@ window.showWhatsAppActivityLogs = function () {
                             var timeAgo = getTimeAgo(log.timestamp);
 
                             html += `
-                                <div style="border-bottom: 1px solid #e0e0e0; padding: 16px 0; transition: background 0.2s; border-radius: 8px; margin-bottom: 4px;">
+                            < div style = "border-bottom: 1px solid #e0e0e0; padding: 16px 0; transition: background 0.2s; border-radius: 8px; margin-bottom: 4px;" >
                                     <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                                         <div>
                                             <div style="font-weight: 600; color: #3b4a54; font-size: 16px;">${log.userName || 'Unknown User'}</div>
@@ -1073,7 +1095,7 @@ window.showWhatsAppActivityLogs = function () {
                                         </svg>
                                         ${log.pageTitle || 'Unknown Page'}
                                     </div>
-                                </div>
+                                </div >
                             `;
                         });
 
@@ -1094,16 +1116,16 @@ window.showWhatsAppActivityLogs = function () {
                         };
                     } else {
                         contentElement.innerHTML = `
-                            <div style="display: flex; justify-content: center; align-items: center; height: 200px;">
+                            < div style = "display: flex; justify-content: center; align-items: center; height: 200px;" >
                                 <div style="text-align: center; color: #667781;">
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48" style="fill: #d1d7db; margin-bottom: 16px;">
-                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
                                     </svg>
                                     <h3 style="margin: 0 0 8px; font-weight: 500; color: #54656f;">No Activity Logs Found</h3>
                                     <p style="margin: 0; font-size: 14px;">There are no activity logs matching your current filters.</p>
                                 </div>
-                            </div>
-                        `;
+                            </div >
+                            `;
                     }
                 }
             });
@@ -2192,20 +2214,20 @@ function showUITypingNotification(displayName) {
         notification.className = 'whatsapp-incognito-typing-notification';
         notification.textContent = displayName + " is typing...";
         notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background-color: #009688;
-            color: white;
-            padding: 10px 15px;
-            border-radius: 4px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            z-index: 10000;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            font-size: 14px;
-            max-width: 300px;
-            word-wrap: break-word;
-        `;
+                        position: fixed;
+                        top: 20px;
+                        right: 20px;
+                        background - color: #009688;
+                        color: white;
+                        padding: 10px 15px;
+                        border - radius: 4px;
+                        box - shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+                        z - index: 10000;
+                        font - family: 'Segoe UI', Tahoma, Geneva, Verdana, sans - serif;
+                        font - size: 14px;
+                        max - width: 300px;
+                        word - wrap: break-word;
+                        `;
 
         // Check if document.body is available
         if (document.body) {
@@ -2887,18 +2909,18 @@ function fallbackExportTypingLogs(format, callback) {
                     // Convert to CSV format
                     var csvContent = "ID,User Name,JID,Action,Date Time,On WhatsApp Tab,Page Title,Page URL,Timestamp\n";
                     logs.forEach(log => {
-                        csvContent += `"${log.id || ''}","${log.userName || ''}","${log.jid || ''}","${log.action || ''}","${log.dateTime || ''}","${log.onWhatsappTab || false}","${log.pageTitle || ''}","${log.pageUrl || ''}","${log.timestamp || ''}"\n`;
+                        csvContent += `"${log.id || ''}", "${log.userName || ''}", "${log.jid || ''}", "${log.action || ''}", "${log.dateTime || ''}", "${log.onWhatsappTab || false}", "${log.pageTitle || ''}", "${log.pageUrl || ''}", "${log.timestamp || ''}"\n`;
                     });
                     exportedData = csvContent;
                 } else if (format === 'txt') {
                     // Convert to plain text format
                     var textContent = "WhatsApp Typing Logs\n\n";
                     logs.forEach(log => {
-                        textContent += `User: ${log.userName || 'Unknown'}\n`;
-                        textContent += `Action: ${log.action || 'Unknown'}\n`;
-                        textContent += `Date/Time: ${log.dateTime || 'Unknown'}\n`;
-                        textContent += `On WhatsApp Tab: ${log.onWhatsappTab ? 'Yes' : 'No'}\n`;
-                        textContent += `Page: ${log.pageTitle || 'Unknown'}\n`;
+                        textContent += `User: ${log.userName || 'Unknown'} \n`;
+                        textContent += `Action: ${log.action || 'Unknown'} \n`;
+                        textContent += `Date / Time: ${log.dateTime || 'Unknown'} \n`;
+                        textContent += `On WhatsApp Tab: ${log.onWhatsappTab ? 'Yes' : 'No'} \n`;
+                        textContent += `Page: ${log.pageTitle || 'Unknown'} \n`;
                         textContent += `------------------------\n`;
                     });
                     exportedData = textContent;
@@ -3515,7 +3537,7 @@ function drawTimelineGraph(container) {
 
     var graphHtml = `
         <div style="position: relative; min-width: 100%; width: ${minWidthPercent}%;">
-            <!-- Time Axis -->
+            <!--Time Axis-->
             <div style="position: relative; height: 25px; border-bottom: 1px solid #ccc; margin-bottom: 15px; margin-left: 120px;">
                 ${axisLabelsHtml}
             </div>

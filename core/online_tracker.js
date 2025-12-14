@@ -10,6 +10,7 @@ var stayOnlineInterval = null;
 window.OnlineTracker = {
     getLogs: getLogs,
     clearLogs: clearLogs,
+    deleteLog: deleteLog,
     getTrackedUsers: getTrackedUsers,
     addTrackedUser: addTrackedUser,
     removeTrackedUser: removeTrackedUser,
@@ -364,6 +365,24 @@ function getLogs() {
 
 function clearLogs() {
     localStorage.removeItem('WAIncognitoOnlineLogs');
+}
+
+function deleteLog(logId) {
+    try {
+        var logs = getLogs();
+        var initialLength = logs.length;
+        // The id is stored as string in generation but might need loose comparison or string conversion
+        logs = logs.filter(l => l.id != logId);
+
+        if (logs.length < initialLength) {
+            localStorage.setItem('WAIncognitoOnlineLogs', JSON.stringify(logs));
+            return true;
+        }
+        return false;
+    } catch (e) {
+        console.error("Error deleting log:", e);
+        return false;
+    }
 }
 
 
