@@ -11,27 +11,53 @@ var showDeviceTypesEnabled = true;
 var autoReceiptOnReplay = true;
 var safetyDelay = 0;
 var typingNotificationsEnabled = false;
+var typingNotificationExclusions = new Set(); // Set of JIDs to exclude from typing notifications
 
 // Expose typing log functions to global scope for frontend access
-window.getWhatsAppActivityLogs = function(callback) {
+window.getWhatsAppActivityLogs = function (callback) {
     return getTypingLogs(callback);
 };
-window.getWhatsAppActivityLogsWithFilters = function(options, callback) {
+window.getWhatsAppActivityLogsWithFilters = function (options, callback) {
     return getTypingLogsWithFilters(options, callback);
 };
-window.getWhatsAppActivityLogStats = function(callback) {
+window.getWhatsAppActivityLogStats = function (callback) {
     return getTypingLogStats(callback);
 };
-window.clearWhatsAppActivityLogs = function(callback) {
+window.clearWhatsAppActivityLogs = function (callback) {
     return clearTypingLogs(callback);
 };
-window.exportWhatsAppActivityLogs = function(format, callback) {
+window.exportWhatsAppActivityLogs = function (format, callback) {
     return exportTypingLogs(format, callback);
 };
-window.loadAllChatsAndLog = function() {
+window.loadAllChatsAndLog = function () {
     return loadAllChatsAndLog();
 };
-window.showWhatsAppActivityLogs = function() {
+window.loadAllChatsAndLog = function () {
+    return loadAllChatsAndLog();
+};
+window.toggleTypingExclusion = function (jid, name) {
+    if (typingNotificationExclusions.has(jid)) {
+        typingNotificationExclusions.delete(jid);
+        console.log("Allowed typing notifications for " + jid);
+    } else {
+        typingNotificationExclusions.add(jid);
+        console.log("Excluded typing notifications for " + jid);
+    }
+    localStorage.setItem("WAIncognito_TypingExclusions", JSON.stringify(Array.from(typingNotificationExclusions)));
+
+    // Refresh the logs if the modal is open
+    if (document.getElementById('whatsapp-logs-modal')) {
+        // We need to trigger a refresh of the logs display
+        // Since we don't have direct access to displayLogs here, we can dispatch an event or
+        // re-open the modal (clunky).
+        // A better way is to filter the logs visually or let the user click refresh.
+        // For now, let's just save.
+    }
+};
+window.getTypingExclusions = function () {
+    return Array.from(typingNotificationExclusions);
+};
+window.showWhatsAppActivityLogs = function () {
     console.log('[WAIncognito] showWhatsAppActivityLogs function called');
     // Create modal container
     var modal = document.createElement('div');
@@ -49,7 +75,7 @@ window.showWhatsAppActivityLogs = function() {
         align-items: center;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     `;
-    
+
     // Create modal content
     var modalContent = document.createElement('div');
     modalContent.style.cssText = `
@@ -64,7 +90,7 @@ window.showWhatsAppActivityLogs = function() {
         flex-direction: column;
         animation: modalFadeIn 0.3s ease-out;
     `;
-    
+
     // Add fade-in animation
     var style = document.createElement('style');
     style.textContent = `
@@ -92,7 +118,7 @@ window.showWhatsAppActivityLogs = function() {
         }
     `;
     document.head.appendChild(style);
-    
+
     // Create header
     var header = document.createElement('div');
     header.style.cssText = `
@@ -104,7 +130,7 @@ window.showWhatsAppActivityLogs = function() {
         align-items: center;
         box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
     `;
-    
+
     var title = document.createElement('h2');
     title.textContent = 'WhatsApp Activity Logs';
     title.style.cssText = `
@@ -112,7 +138,7 @@ window.showWhatsAppActivityLogs = function() {
         font-size: 20px;
         font-weight: 600;
     `;
-    
+
     var closeButton = document.createElement('button');
     closeButton.textContent = '×';
     closeButton.style.cssText = `
@@ -130,25 +156,25 @@ window.showWhatsAppActivityLogs = function() {
         border-radius: 50%;
         transition: background 0.2s;
     `;
-    
-    closeButton.onmouseover = function() {
+
+    closeButton.onmouseover = function () {
         this.style.background = 'rgba(255, 255, 255, 0.3)';
     };
-    
-    closeButton.onmouseout = function() {
+
+    closeButton.onmouseout = function () {
         this.style.background = 'rgba(255, 255, 255, 0.2)';
     };
-    
-    closeButton.onclick = function() {
+
+    closeButton.onclick = function () {
         document.body.removeChild(modal);
         if (style.parentNode) {
             style.parentNode.removeChild(style);
         }
     };
-    
+
     header.appendChild(title);
     header.appendChild(closeButton);
-    
+
     // Create filter section
     var filterSection = document.createElement('div');
     filterSection.style.cssText = `
@@ -160,7 +186,7 @@ window.showWhatsAppActivityLogs = function() {
         gap: 12px;
         align-items: center;
     `;
-    
+
     var filterLabel = document.createElement('span');
     filterLabel.textContent = 'Filters:';
     filterLabel.style.cssText = `
@@ -168,7 +194,7 @@ window.showWhatsAppActivityLogs = function() {
         color: #3b4a54;
         font-size: 14px;
     `;
-    
+
     var userFilterInput = document.createElement('input');
     userFilterInput.type = 'text';
     userFilterInput.placeholder = 'Search by user name...';
@@ -182,17 +208,17 @@ window.showWhatsAppActivityLogs = function() {
         box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
         transition: border 0.2s;
     `;
-    
-    userFilterInput.onfocus = function() {
+
+    userFilterInput.onfocus = function () {
         this.style.borderColor = '#008069';
         this.style.boxShadow = 'inset 0 1px 2px rgba(0, 0, 0, 0.05), 0 0 0 2px rgba(0, 128, 105, 0.2)';
     };
-    
-    userFilterInput.onblur = function() {
+
+    userFilterInput.onblur = function () {
         this.style.borderColor = '#ddd';
         this.style.boxShadow = 'inset 0 1px 2px rgba(0, 0, 0, 0.05)';
     };
-    
+
     var tabFilterSelect = document.createElement('select');
     tabFilterSelect.style.cssText = `
         padding: 8px 12px;
@@ -203,23 +229,23 @@ window.showWhatsAppActivityLogs = function() {
         box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
         cursor: pointer;
     `;
-    
+
     var allOption = document.createElement('option');
     allOption.value = '';
     allOption.textContent = 'All Tabs';
-    
+
     var onTabOption = document.createElement('option');
     onTabOption.value = 'on';
     onTabOption.textContent = 'On Tab';
-    
+
     var offTabOption = document.createElement('option');
     offTabOption.value = 'off';
     offTabOption.textContent = 'Off Tab';
-    
+
     tabFilterSelect.appendChild(allOption);
     tabFilterSelect.appendChild(onTabOption);
     tabFilterSelect.appendChild(offTabOption);
-    
+
     var refreshButton = document.createElement('button');
     refreshButton.textContent = 'Refresh';
     refreshButton.style.cssText = `
@@ -234,20 +260,20 @@ window.showWhatsAppActivityLogs = function() {
         transition: background 0.2s;
         box-shadow: 0 2px 4px rgba(0, 128, 105, 0.2);
     `;
-    
-    refreshButton.onmouseover = function() {
+
+    refreshButton.onmouseover = function () {
         this.style.background = '#006a52';
     };
-    
-    refreshButton.onmouseout = function() {
+
+    refreshButton.onmouseout = function () {
         this.style.background = '#008069';
     };
-    
+
     filterSection.appendChild(filterLabel);
     filterSection.appendChild(userFilterInput);
     filterSection.appendChild(tabFilterSelect);
     filterSection.appendChild(refreshButton);
-    
+
     // Create stats section
     var statsSection = document.createElement('div');
     statsSection.id = 'logs-stats';
@@ -260,7 +286,7 @@ window.showWhatsAppActivityLogs = function() {
         gap: 20px;
         font-size: 14px;
     `;
-    
+
     // Create content area
     var content = document.createElement('div');
     content.id = 'logs-content';
@@ -270,7 +296,7 @@ window.showWhatsAppActivityLogs = function() {
         flex-grow: 1;
         max-height: calc(90vh - 250px);
     `;
-    
+
     // Create loading message
     var loading = document.createElement('div');
     loading.innerHTML = `
@@ -281,7 +307,7 @@ window.showWhatsAppActivityLogs = function() {
             </div>
         </div>
     `;
-    
+
     // Add spinner animation
     var spinnerStyle = document.createElement('style');
     spinnerStyle.textContent = `
@@ -291,9 +317,9 @@ window.showWhatsAppActivityLogs = function() {
         }
     `;
     document.head.appendChild(spinnerStyle);
-    
+
     content.appendChild(loading);
-    
+
     // Create footer
     var footer = document.createElement('div');
     footer.style.cssText = `
@@ -303,7 +329,7 @@ window.showWhatsAppActivityLogs = function() {
         justify-content: space-between;
         border-top: 1px solid #e0e0e0;
     `;
-    
+
     var clearButton = document.createElement('button');
     clearButton.textContent = 'Clear All Logs';
     clearButton.style.cssText = `
@@ -318,25 +344,25 @@ window.showWhatsAppActivityLogs = function() {
         transition: background 0.2s;
         box-shadow: 0 2px 4px rgba(220, 53, 69, 0.2);
     `;
-    
-    clearButton.onmouseover = function() {
+
+    clearButton.onmouseover = function () {
         this.style.background = '#c82333';
     };
-    
-    clearButton.onmouseout = function() {
+
+    clearButton.onmouseout = function () {
         this.style.background = '#dc3545';
     };
-    
-    clearButton.onclick = function() {
+
+    clearButton.onclick = function () {
         if (confirm('Are you sure you want to clear all activity logs? This action cannot be undone.')) {
-            window.clearWhatsAppActivityLogs(function() {
+            window.clearWhatsAppActivityLogs(function () {
                 // Refresh the logs display
                 displayLogs();
                 updateStats();
             });
         }
     };
-    
+
     var exportButton = document.createElement('button');
     exportButton.textContent = 'Export Logs';
     exportButton.style.cssText = `
@@ -351,20 +377,20 @@ window.showWhatsAppActivityLogs = function() {
         transition: background 0.2s;
         box-shadow: 0 2px 4px rgba(0, 123, 255, 0.2);
     `;
-    
-    exportButton.onmouseover = function() {
+
+    exportButton.onmouseover = function () {
         this.style.background = '#0069d9';
     };
-    
-    exportButton.onmouseout = function() {
+
+    exportButton.onmouseout = function () {
         this.style.background = '#007bff';
     };
-    
-    exportButton.onclick = function() {
+
+    exportButton.onclick = function () {
         // Simple export as JSON for now
-        window.exportWhatsAppActivityLogs('json', function(data) {
+        window.exportWhatsAppActivityLogs('json', function (data) {
             if (data) {
-                var blob = new Blob([data], {type: 'application/json'});
+                var blob = new Blob([data], { type: 'application/json' });
                 var url = URL.createObjectURL(blob);
                 var a = document.createElement('a');
                 a.href = url;
@@ -376,10 +402,297 @@ window.showWhatsAppActivityLogs = function() {
             }
         });
     };
-    
+
+    var exclusionsButton = document.createElement('button');
+    exclusionsButton.textContent = 'Manage Exclusions';
+    exclusionsButton.style.cssText = `
+        background-color: #6c757d;
+        color: white;
+        border: none;
+        padding: 10px 18px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 500;
+        font-size: 14px;
+        transition: background 0.2s;
+        box-shadow: 0 2px 4px rgba(108, 117, 125, 0.2);
+        margin-left: 10px;
+    `;
+
+    exclusionsButton.onclick = function () {
+        showExclusionsModal();
+    };
+
+    function showExclusionsModal() {
+        var contentElement = document.getElementById('logs-content');
+        if (!contentElement) return;
+
+        // Hide main sections
+        if (typeof filterSection !== 'undefined') filterSection.style.display = 'none';
+        if (typeof statsSection !== 'undefined') statsSection.style.display = 'none';
+        if (typeof footer !== 'undefined') footer.style.display = 'none';
+
+        // Clear content
+        contentElement.innerHTML = '';
+
+        // Create container
+        var container = document.createElement('div');
+        container.style.padding = '20px 0';
+
+        // Header
+        var title = document.createElement('h3');
+        title.textContent = 'Manage Exclusions';
+        title.style.cssText = 'color: #3b4a54; margin-bottom: 8px; margin-top: 0;';
+        container.appendChild(title);
+
+        var description = document.createElement('p');
+        description.textContent = 'Search for chats to exclude from typing notifications.';
+        description.style.cssText = 'color: #667781; margin-bottom: 20px; font-size: 14px;';
+        container.appendChild(description);
+
+        // Search Section
+        var searchContainer = document.createElement('div');
+        searchContainer.style.cssText = 'position: relative; margin-bottom: 24px;';
+
+        var searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.placeholder = 'Search by contact name or phone number...';
+        searchInput.style.cssText = `
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            box-sizing: border-box;
+            outline: none;
+        `;
+        searchInput.onfocus = function () { this.style.borderColor = '#008069'; };
+        searchInput.onblur = function () { this.style.borderColor = '#ddd'; };
+
+        var suggestionsBox = document.createElement('ul');
+        suggestionsBox.style.cssText = `
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-top: none;
+            border-radius: 0 0 6px 6px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+            z-index: 10001;
+            display: none;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        `;
+
+        searchContainer.appendChild(searchInput);
+        searchContainer.appendChild(suggestionsBox);
+        container.appendChild(searchContainer);
+
+        // Exclusions List Title
+        var listTitle = document.createElement('h4');
+        listTitle.textContent = 'Currently Excluded';
+        listTitle.style.cssText = 'color: #3b4a54; margin-bottom: 12px; font-size: 16px; border-bottom: 2px solid #f0f2f5; padding-bottom: 8px; margin-top: 0;';
+        container.appendChild(listTitle);
+
+        // Exclusions List Container
+        var listContainer = document.createElement('div');
+        listContainer.id = 'exclusion-list-container';
+        listContainer.style.maxHeight = '300px';
+        listContainer.style.overflowY = 'auto';
+        container.appendChild(listContainer);
+
+        // Back Button
+        var backButton = document.createElement('button');
+        backButton.textContent = 'Back to Logs';
+        backButton.style.cssText = `
+            background-color: #008069;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            margin-top: 20px;
+            box-shadow: 0 2px 4px rgba(0, 128, 105, 0.2);
+        `;
+        backButton.onclick = function () {
+            // Restore views
+            if (typeof filterSection !== 'undefined') filterSection.style.display = 'flex';
+            if (typeof statsSection !== 'undefined') statsSection.style.display = 'flex';
+            if (typeof footer !== 'undefined') footer.style.display = 'flex';
+
+            // Reload logs
+            displayLogs();
+        };
+        container.appendChild(backButton);
+
+        contentElement.appendChild(container);
+
+        // Logic
+        var allChats = [];
+        var loaded = false;
+
+        function loadChats() {
+            if (loaded) return;
+            // Show loading indicator
+            searchInput.placeholder = "Loading contacts...";
+
+            // Use setTimeout to allow UI to render first
+            setTimeout(function () {
+                if (window.getAllChatsSimple) {
+                    allChats = window.getAllChatsSimple();
+                    loaded = true;
+                    searchInput.placeholder = 'Search by contact name or phone number...';
+                } else if (window.loadAllChatsAndLog) {
+                    allChats = window.loadAllChatsAndLog(5000);
+                    loaded = true;
+                    searchInput.placeholder = 'Search by contact name or phone number...';
+                }
+            }, 50);
+        }
+
+        function renderExclusions() {
+            var exclusions = window.getTypingExclusions();
+            listContainer.innerHTML = '';
+
+            if (exclusions.length === 0) {
+                var empty = document.createElement('div');
+                empty.textContent = 'No chats excluded yet.';
+                empty.style.cssText = 'color: #8696a0; font-style: italic; padding: 10px 0;';
+                listContainer.appendChild(empty);
+                return;
+            }
+
+            exclusions.forEach(function (jid) {
+                var item = document.createElement('div');
+                item.style.cssText = 'border-bottom: 1px solid #e0e0e0; padding: 12px 0; display: flex; justify-content: space-between; align-items: center;';
+
+                // Try to find name if available in our loaded chats
+                var displayName = jid;
+                var detailText = '';
+
+                if (allChats && allChats.length > 0) {
+                    var chatInfo = allChats.find(c => c.jid === jid);
+                    if (chatInfo) {
+                        displayName = chatInfo.name;
+                        detailText = jid;
+                    }
+                }
+
+                var infoDiv = document.createElement('div');
+                var nameSpan = document.createElement('div');
+                nameSpan.textContent = displayName;
+                nameSpan.style.fontWeight = '500';
+                nameSpan.style.color = '#3b4a54';
+
+                infoDiv.appendChild(nameSpan);
+
+                if (detailText) {
+                    var detailSpan = document.createElement('div');
+                    detailSpan.textContent = detailText;
+                    detailSpan.style.fontSize = '12px';
+                    detailSpan.style.color = '#667781';
+                    infoDiv.appendChild(detailSpan);
+                }
+
+                var removeBtn = document.createElement('button');
+                removeBtn.textContent = 'Remove';
+                removeBtn.style.cssText = `
+                    background-color: #dc3545;
+                    color: white;
+                    border: none;
+                    padding: 6px 12px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 12px;
+                `;
+                removeBtn.onclick = function () {
+                    window.toggleTypingExclusion(jid);
+                    renderExclusions();
+                };
+
+                item.appendChild(infoDiv);
+                item.appendChild(removeBtn);
+                listContainer.appendChild(item);
+            });
+        }
+
+        renderExclusions();
+        loadChats();
+
+        // Autocomplete Logic
+        searchInput.addEventListener('input', function () {
+            var query = this.value.toLowerCase();
+            suggestionsBox.innerHTML = '';
+
+            if (query.length < 1) {
+                suggestionsBox.style.display = 'none';
+                return;
+            }
+
+            // Exclude already excluded items from suggestions
+            var currentExclusions = new Set(window.getTypingExclusions());
+
+            var matches = allChats.filter(function (chat) {
+                if (currentExclusions.has(chat.jid)) return false;
+
+                var nameMatch = chat.name && chat.name.toLowerCase().includes(query);
+                var jidMatch = chat.jid && chat.jid.toLowerCase().includes(query);
+                return nameMatch || jidMatch;
+            }).slice(0, 10);
+
+            if (matches.length > 0) {
+                suggestionsBox.style.display = 'block';
+                matches.forEach(function (chat) {
+                    var li = document.createElement('li');
+                    li.style.cssText = 'padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; box-sizing: border-box; flex-direction: column;';
+                    li.onmouseover = function () { this.style.backgroundColor = '#f5f5f5'; };
+                    li.onmouseout = function () { this.style.backgroundColor = 'white'; };
+
+                    var nameDiv = document.createElement('div');
+                    nameDiv.textContent = chat.name;
+                    nameDiv.style.fontWeight = '500';
+                    nameDiv.style.color = '#3b4a54';
+
+                    var jidDiv = document.createElement('div');
+                    jidDiv.textContent = chat.jid;
+                    jidDiv.style.fontSize = '12px';
+                    jidDiv.style.color = '#667781';
+
+                    li.appendChild(nameDiv);
+                    li.appendChild(jidDiv);
+
+                    li.onclick = function () {
+                        window.toggleTypingExclusion(chat.jid);
+                        searchInput.value = '';
+                        suggestionsBox.style.display = 'none';
+                        renderExclusions();
+                    };
+
+                    suggestionsBox.appendChild(li);
+                });
+            } else {
+                suggestionsBox.style.display = 'none';
+            }
+        });
+
+        // Close suggestions on click outside
+        document.addEventListener('click', function (e) {
+            if (!searchContainer.contains(e.target)) {
+                suggestionsBox.style.display = 'none';
+            }
+        });
+    }
+
+    footer.appendChild(exclusionsButton);
     footer.appendChild(clearButton);
     footer.appendChild(exportButton);
-    
+
     // Assemble modal
     modalContent.appendChild(header);
     modalContent.appendChild(filterSection);
@@ -387,13 +700,13 @@ window.showWhatsAppActivityLogs = function() {
     modalContent.appendChild(content);
     modalContent.appendChild(footer);
     modal.appendChild(modalContent);
-    
+
     // Add to document
     document.body.appendChild(modal);
-    
+
     // Function to update stats
     function updateStats() {
-        window.getWhatsAppActivityLogStats(function(stats) {
+        window.getWhatsAppActivityLogStats(function (stats) {
             var statsElement = document.getElementById('logs-stats');
             if (statsElement) {
                 statsElement.innerHTML = `
@@ -437,7 +750,7 @@ window.showWhatsAppActivityLogs = function() {
             }
         });
     }
-    
+
     // Function to display logs
     function displayLogs(filters = {}) {
         var contentElement = document.getElementById('logs-content');
@@ -451,17 +764,17 @@ window.showWhatsAppActivityLogs = function() {
                     </div>
                 </div>
             `;
-            
-            window.getWhatsAppActivityLogsWithFilters(filters, function(logs) {
+
+            window.getWhatsAppActivityLogsWithFilters(filters, function (logs) {
                 if (contentElement) {
                     if (logs && logs.length > 0) {
                         var html = '<div style="padding: 16px 0;">';
-                        
-                        logs.forEach(function(log) {
+
+                        logs.forEach(function (log) {
                             var date = new Date(log.timestamp);
                             var formattedDate = date.toLocaleString();
                             var timeAgo = getTimeAgo(log.timestamp);
-                            
+
                             html += `
                                 <div style="border-bottom: 1px solid #e0e0e0; padding: 16px 0; transition: background 0.2s; border-radius: 8px; margin-bottom: 4px;">
                                     <div style="display: flex; justify-content: space-between; align-items: flex-start;">
@@ -469,9 +782,22 @@ window.showWhatsAppActivityLogs = function() {
                                             <div style="font-weight: 600; color: #3b4a54; font-size: 16px;">${log.userName || 'Unknown User'}</div>
                                             <div style="margin-top: 4px; display: flex; align-items: center;">
                                                 <span style="background-color: #008069; color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 500;">${log.action}</span>
-                                                ${log.onWhatsappTab ? 
-                                                    '<span style="background-color: #28a745; color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-left: 8px;">On Tab</span>' : 
-                                                    '<span style="background-color: #ffc107; color: black; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-left: 8px;">Off Tab</span>'}
+                                                ${log.onWhatsappTab ?
+                                    '<span style="background-color: #28a745; color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-left: 8px;">On Tab</span>' :
+                                    '<span style="background-color: #ffc107; color: black; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-left: 8px;">Off Tab</span>'}
+                                                
+                                                <button class="mute-button" data-jid="${log.jid}" title="Mute/Unmute this user" style="
+                                                    background: none; 
+                                                    border: 1px solid #ddd; 
+                                                    border-radius: 4px; 
+                                                    margin-left: 10px; 
+                                                    cursor: pointer; 
+                                                    font-size: 12px;
+                                                    padding: 2px 6px;
+                                                    color: #667781;
+                                                ">
+                                                    ${typingNotificationExclusions.has(log.jid) ? '🔇 Muted' : '🔊 Mute'}
+                                                </button>
                                             </div>
                                         </div>
                                         <div style="text-align: right;">
@@ -494,9 +820,23 @@ window.showWhatsAppActivityLogs = function() {
                                 </div>
                             `;
                         });
-                        
+
+                        html += '</div>';
                         html += '</div>';
                         contentElement.innerHTML = html;
+
+                        // Add event delegation for buttons
+                        contentElement.onclick = function (e) {
+                            var btn = e.target.closest('.mute-button');
+                            if (btn) {
+                                var jid = btn.getAttribute('data-jid');
+                                if (jid) {
+                                    window.toggleTypingExclusion(jid);
+                                    // Refresh logs to update UI
+                                    displayLogs(filters);
+                                }
+                            }
+                        };
                     } else {
                         contentElement.innerHTML = `
                             <div style="display: flex; justify-content: center; align-items: center; height: 200px;">
@@ -514,48 +854,48 @@ window.showWhatsAppActivityLogs = function() {
             });
         }
     }
-    
+
     // Helper function to get time ago
     function getTimeAgo(timestamp) {
         var now = Date.now();
         var seconds = Math.floor((now - timestamp) / 1000);
-        
+
         if (seconds < 60) return 'Just now';
         if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
         if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
         return Math.floor(seconds / 86400) + 'd ago';
     }
-    
+
     // Set up filter event handlers
-    userFilterInput.addEventListener('input', function() {
+    userFilterInput.addEventListener('input', function () {
         applyFilters();
     });
-    
-    tabFilterSelect.addEventListener('change', function() {
+
+    tabFilterSelect.addEventListener('change', function () {
         applyFilters();
     });
-    
-    refreshButton.onclick = function() {
+
+    refreshButton.onclick = function () {
         applyFilters();
         updateStats();
     };
-    
+
     function applyFilters() {
         var filters = {};
-        
+
         if (userFilterInput.value.trim() !== '') {
             filters.userName = userFilterInput.value.trim();
         }
-        
+
         if (tabFilterSelect.value === 'on') {
             filters.onWhatsappTab = true;
         } else if (tabFilterSelect.value === 'off') {
             filters.onWhatsappTab = false;
         }
-        
+
         displayLogs(filters);
     }
-    
+
     // Load logs and stats initially
     displayLogs();
     updateStats();
@@ -576,77 +916,69 @@ var WAPassthrough = false;
 var WAPassthroughWithDebug = false;
 
 initialize();
- 
+
 //
 // a WebSocket frame is about to be sent out.
 //
-wsHook.before = function (originalData, url)
-{
-    var promise = async function(originalData) {
+wsHook.before = function (originalData, url) {
+    var promise = async function (originalData) {
 
-    if (WAPassthrough) return originalData;
+        if (WAPassthrough) return originalData;
 
-    try
-    {
-        if (!(originalData instanceof ArrayBuffer || originalData instanceof Uint8Array)) return originalData;
+        try {
+            if (!(originalData instanceof ArrayBuffer || originalData instanceof Uint8Array)) return originalData;
 
-        // encrytped binary payload
-        var decryptedFrames = await MultiDevice.decryptNoisePacket(originalData, isIncoming=false);
-        if (decryptedFrames == null) return originalData;
+            // encrytped binary payload
+            var decryptedFrames = await MultiDevice.decryptNoisePacket(originalData, isIncoming = false);
+            if (decryptedFrames == null) return originalData;
 
-        for (var i = 0; i < decryptedFrames.length; i++)
-        {
-            var decryptedFrameInfo = decryptedFrames[i];
-            var decryptedFrame = decryptedFrameInfo.frame;
-            var decryptedFrameOriginal = decryptedFrameInfo.frameUncompressed;
-            var counter = decryptedFrameInfo.counter;
+            for (var i = 0; i < decryptedFrames.length; i++) {
+                var decryptedFrameInfo = decryptedFrames[i];
+                var decryptedFrame = decryptedFrameInfo.frame;
+                var decryptedFrameOriginal = decryptedFrameInfo.frameUncompressed;
+                var counter = decryptedFrameInfo.counter;
 
-            var realNode = await nodeReaderWriter.decodeStanza(decryptedFrameOriginal, gzipInflate);
-            
-            var [isAllowed, manipulatedNode] = await NodeHandler.interceptOutgoingNode(realNode);
-            decryptedFrames[i] = {node: manipulatedNode, counter: counter};
+                var realNode = await nodeReaderWriter.decodeStanza(decryptedFrameOriginal, gzipInflate);
 
-            if (WAdebugMode || WAPassthroughWithDebug)
-            {
-                printNode(manipulatedNode, isIncoming=false, decryptedFrame.byteLength);
-                if (WAPassthroughWithDebug) return originalData;
+                var [isAllowed, manipulatedNode] = await NodeHandler.interceptOutgoingNode(realNode);
+                decryptedFrames[i] = { node: manipulatedNode, counter: counter };
+
+                if (WAdebugMode || WAPassthroughWithDebug) {
+                    printNode(manipulatedNode, isIncoming = false, decryptedFrame.byteLength);
+                    if (WAPassthroughWithDebug) return originalData;
+                }
+
+                // sanity check that our node parsing is complete
+                await checkNodeEncoderSanity(decryptedFrameOriginal, isIncoming = false);
             }
 
-            // sanity check that our node parsing is complete
-            await checkNodeEncoderSanity(decryptedFrameOriginal, isIncoming = false);
+            var packedNode = await MultiDevice.encryptAndPackNodesForSending(decryptedFrames, isIncoming = false);
+
+            var looksEqual = isEqualArray(new Uint8Array(originalData), new Uint8Array(packedNode));
+            if (!looksEqual && isAllowed) {
+                debugger;
+            }
+
+            if (isInitializing) {
+                isInitializing = false;
+                console.log("WhatsIncognito: Interception is working.");
+                document.dispatchEvent(new CustomEvent('onInterceptionWorking', { detail: JSON.stringify({ isInterceptionWorking: true }) }));
+            }
+
+            return packedNode;
         }
+        catch (exception) {
+            if (typeof (exception) == "string" && exception.includes("counter")) {
+                console.log(exception);
+                return originalData;
+            }
 
-        var packedNode = await MultiDevice.encryptAndPackNodesForSending(decryptedFrames, isIncoming=false);
-
-        var looksEqual = isEqualArray(new Uint8Array(originalData), new Uint8Array(packedNode));
-        if (!looksEqual && isAllowed)
-        {
-            debugger;
-        }
-
-        if (isInitializing)
-        {
-            isInitializing = false;
-            console.log("WhatsIncognito: Interception is working.");
-            document.dispatchEvent(new CustomEvent('onInterceptionWorking', { detail: JSON.stringify({isInterceptionWorking: true}) }));
-        }
-
-        return packedNode;
-    }
-    catch (exception)
-    {
-        if (typeof(exception) == "string" && exception.includes("counter"))
-        {
-            console.log(exception);
+            console.error("WhatsIncognito: Passing-through outgoing packet due to exception:");
+            console.error(exception);
+            console.error("outgoing noise packet was:");
+            console.error(originalData);
             return originalData;
         }
-        
-        console.error("WhatsIncognito: Passing-through outgoing packet due to exception:");
-        console.error(exception);
-        console.error("outgoing noise packet was:");
-        console.error(originalData);
-        return originalData;
-    }
 
     };
 
@@ -656,84 +988,77 @@ wsHook.before = function (originalData, url)
 //
 // a WebScoket frame was received from network.
 //
-wsHook.after = function (messageEvent, url)
-{
-    var promise = async function(messageEvent) {
-    
-    if (WAPassthrough) return messageEvent;
+wsHook.after = function (messageEvent, url) {
+    var promise = async function (messageEvent) {
 
-    try
-    {
-        var originalData = messageEvent.data;
+        if (WAPassthrough) return messageEvent;
 
-        if (!(originalData instanceof ArrayBuffer || originalData instanceof Uint8Array)) return messageEvent;
+        try {
+            var originalData = messageEvent.data;
 
-        var decryptedFrames = await MultiDevice.decryptNoisePacket(originalData, isIncoming=true);
-        if (decryptedFrames == null) return messageEvent;
+            if (!(originalData instanceof ArrayBuffer || originalData instanceof Uint8Array)) return messageEvent;
 
-        var didBlockNode = false;
-        for (var i = 0; i < decryptedFrames.length; i++)
-        {
-            var decryptedFrameInfo = decryptedFrames[i];
-            var decryptedFrame = decryptedFrameInfo.frame;
-            var decryptedFrameOriginal = decryptedFrameInfo.frameUncompressed;
-            var counter = decryptedFrameInfo.counter;
+            var decryptedFrames = await MultiDevice.decryptNoisePacket(originalData, isIncoming = true);
+            if (decryptedFrames == null) return messageEvent;
 
-            var realNode = await nodeReaderWriter.decodeStanza(decryptedFrameOriginal, gzipInflate);
-            
-            if (WAdebugMode || WAPassthroughWithDebug)
-            {
-                printNode(realNode, isIncoming=true, decryptedFrame.byteLength);
-                
-                if (WAPassthroughWithDebug) return messageEvent;
-            }
+            var didBlockNode = false;
+            for (var i = 0; i < decryptedFrames.length; i++) {
+                var decryptedFrameInfo = decryptedFrames[i];
+                var decryptedFrame = decryptedFrameInfo.frame;
+                var decryptedFrameOriginal = decryptedFrameInfo.frameUncompressed;
+                var counter = decryptedFrameInfo.counter;
 
-            // sanity check that our node parsing is deterministic
-            await checkNodeEncoderSanity(decryptedFrameOriginal, isIncoming = true);
+                var realNode = await nodeReaderWriter.decodeStanza(decryptedFrameOriginal, gzipInflate);
 
-            // Check for typing notifications
-            if (typingNotificationsEnabled) {
-                try {
-                    await checkForTypingNotification(realNode);
-                } catch (error) {
-                    console.error("Error processing typing notification:", error);
-                    // Continue processing even if typing notification fails
+                if (WAdebugMode || WAPassthroughWithDebug) {
+                    printNode(realNode, isIncoming = true, decryptedFrame.byteLength);
+
+                    if (WAPassthroughWithDebug) return messageEvent;
                 }
+
+                // sanity check that our node parsing is deterministic
+                await checkNodeEncoderSanity(decryptedFrameOriginal, isIncoming = true);
+
+                // Check for typing notifications
+                if (typingNotificationsEnabled) {
+                    try {
+                        await checkForTypingNotification(realNode);
+                    } catch (error) {
+                        console.error("Error processing typing notification:", error);
+                        // Continue processing even if typing notification fails
+                    }
+                }
+
+                var [isAllowed, manipulatedNode] = await NodeHandler.interceptReceivedNode(realNode);
+
+                if (!isAllowed) {
+                    didBlockNode = true;
+                }
+
+                decryptedFrames[i] = { node: manipulatedNode, counter: counter, decryptedFrame: decryptedFrame };
             }
 
-            var [isAllowed, manipulatedNode] = await NodeHandler.interceptReceivedNode(realNode);
+            var packet = await MultiDevice.encryptAndPackNodesForSending(decryptedFrames, true);
+            if (didBlockNode) messageEvent.data = packet;
 
-            if (!isAllowed)
-            {
-                didBlockNode = true;
-            }
+            // TODO: compare the original `data` with `packet`
 
-            decryptedFrames[i] = {node: manipulatedNode, counter: counter, decryptedFrame: decryptedFrame};
-        }
-
-        var packet = await MultiDevice.encryptAndPackNodesForSending(decryptedFrames, true);
-        if (didBlockNode) messageEvent.data = packet;
-
-        // TODO: compare the original `data` with `packet`
-
-        return messageEvent;
-    }
-    catch (exception)
-    {
-        if (exception.message && exception.message.includes("stream end")) return messageEvent;
-        if (typeof(exception) == "string" && exception.includes("counter"))
-        {
-            console.log(exception);
             return messageEvent;
         }
+        catch (exception) {
+            if (exception.message && exception.message.includes("stream end")) return messageEvent;
+            if (typeof (exception) == "string" && exception.includes("counter")) {
+                console.log(exception);
+                return messageEvent;
+            }
 
-        console.error("Passing-through incoming packet due to error:");
-        console.error(exception);
-        console.error("incoming noise packet was:");
-        console.error(originalData);
-        debugger;
-        return messageEvent;
-    };
+            console.error("Passing-through incoming packet due to error:");
+            console.error(exception);
+            console.error("incoming noise packet was:");
+            console.error(originalData);
+            debugger;
+            return messageEvent;
+        };
 
     };
 
@@ -742,12 +1067,10 @@ wsHook.after = function (messageEvent, url)
 
 
 
-function onDeletionMessageBlocked(message, remoteJid, messageId, deletedMessageId)
-{
+function onDeletionMessageBlocked(message, remoteJid, messageId, deletedMessageId) {
     // In case the message already appears on screen, mark it in red
     var messageNode = document.querySelector("[data-id*='" + deletedMessageId + "']");
-    if (messageNode)
-    {
+    if (messageNode) {
         messageNode.setAttribute("deleted-message", "true");     // mark the message in red
     }
 
@@ -757,22 +1080,18 @@ function onDeletionMessageBlocked(message, remoteJid, messageId, deletedMessageI
 
     // Now, save the deleted message in the DB after a short wait
     var waitTime = window.WhatsAppAPI != undefined ? 100 : 5000;
-    setTimeout(async function() 
-    {
+    setTimeout(async function () {
         var chat = await getChatByJID(remoteJid);
-        if (chat)
-        {
+        if (chat) {
             if (chat.loadEarlierMsgs)
                 await chat.loadEarlierMsgs();
             else
                 await WhatsAppAPI.LoadEarlierMessages.loadEarlierMsgs(chat);
 
             var msgs = chat.msgs.getModelsArray();
-        
-            for (let i = 0; i < msgs.length; i++)
-            {
-                if (msgs[i].id.id == deletedMessageId)
-                {
+
+            for (let i = 0; i < msgs.length; i++) {
+                if (msgs[i].id.id == deletedMessageId) {
                     saveDeletedMessage(msgs[i], message.protocolMessage.key, messageId);
                     break;
                 }
@@ -781,58 +1100,51 @@ function onDeletionMessageBlocked(message, remoteJid, messageId, deletedMessageI
     }, waitTime);
 }
 
-async function decryptE2EMessagesFromNode(node)
-{
+async function decryptE2EMessagesFromNode(node) {
     // decrypt the signal message
-    try
-    {
+    try {
         return MultiDevice.decryptE2EMessagesFromMessageNode(node);
     }
-    catch (exception)
-    {
+    catch (exception) {
         console.error("Could not decrypt E2E message with type " + node.attrs["type"] + " due to exception:");
         console.error(exception);
         debugger;
     }
 }
 
-async function interceptViewOnceMessages(e2eMessage, messageId) 
-{
+async function interceptViewOnceMessages(e2eMessage, messageId) {
     if (WAdebugMode) {
         console.log("WhatsIncognito: Checking for view-once message. messageId:", messageId);
         console.log("WhatsIncognito: e2eMessage:", e2eMessage);
         console.log("WhatsIncognito: e2eMessage.viewOnceMessageV2:", e2eMessage.viewOnceMessageV2);
         console.log("WhatsIncognito: e2eMessage.viewOnceMessageV2Extension:", e2eMessage.viewOnceMessageV2Extension);
     }
-    
+
     // Check if this is a view-once message
     const hasViewOnceV2 = e2eMessage.viewOnceMessageV2 !== null && e2eMessage.viewOnceMessageV2 !== undefined;
     const hasViewOnceV2Extension = e2eMessage.viewOnceMessageV2Extension !== null && e2eMessage.viewOnceMessageV2Extension !== undefined;
-    
+
     if (WAdebugMode) {
         console.log("WhatsIncognito: hasViewOnceV2:", hasViewOnceV2);
         console.log("WhatsIncognito: hasViewOnceV2Extension:", hasViewOnceV2Extension);
     }
-    
-    if (hasViewOnceV2 || hasViewOnceV2Extension) 
-    {
+
+    if (hasViewOnceV2 || hasViewOnceV2Extension) {
         if (WAdebugMode) {
             console.log("WhatsIncognito: Detected view-once message");
         }
-        
+
         var retrievedMsg = {};
         var type = "";
         var caption = null;
-        
-        if (hasViewOnceV2)
-        {
+
+        if (hasViewOnceV2) {
             if (WAdebugMode) {
                 console.log("WhatsIncognito: Processing viewOnceMessageV2");
                 console.log("WhatsIncognito: viewOnceMessageV2.message:", e2eMessage.viewOnceMessageV2.message);
             }
-            
-            if (e2eMessage.viewOnceMessageV2.message.imageMessage !== null && e2eMessage.viewOnceMessageV2.message.imageMessage !== undefined) 
-            {
+
+            if (e2eMessage.viewOnceMessageV2.message.imageMessage !== null && e2eMessage.viewOnceMessageV2.message.imageMessage !== undefined) {
                 retrievedMsg = e2eMessage.viewOnceMessageV2.message.imageMessage;
                 type = "image";
                 caption = retrievedMsg.caption;
@@ -840,8 +1152,7 @@ async function interceptViewOnceMessages(e2eMessage, messageId)
                     console.log("WhatsIncognito: Detected image message in viewOnceMessageV2");
                 }
             }
-            else if (e2eMessage.viewOnceMessageV2.message.videoMessage !== null && e2eMessage.viewOnceMessageV2.message.videoMessage !== undefined) 
-            {
+            else if (e2eMessage.viewOnceMessageV2.message.videoMessage !== null && e2eMessage.viewOnceMessageV2.message.videoMessage !== undefined) {
                 retrievedMsg = e2eMessage.viewOnceMessageV2.message.videoMessage;
                 type = "video";
                 caption = retrievedMsg.caption;
@@ -849,8 +1160,7 @@ async function interceptViewOnceMessages(e2eMessage, messageId)
                     console.log("WhatsIncognito: Detected video message in viewOnceMessageV2");
                 }
             }
-            else if (e2eMessage.viewOnceMessageV2.message.documentMessage !== null && e2eMessage.viewOnceMessageV2.message.documentMessage !== undefined) 
-            {
+            else if (e2eMessage.viewOnceMessageV2.message.documentMessage !== null && e2eMessage.viewOnceMessageV2.message.documentMessage !== undefined) {
                 retrievedMsg = e2eMessage.viewOnceMessageV2.message.documentMessage;
                 type = "document";
                 caption = retrievedMsg.caption;
@@ -858,31 +1168,27 @@ async function interceptViewOnceMessages(e2eMessage, messageId)
                     console.log("WhatsIncognito: Detected document message in viewOnceMessageV2");
                 }
             }
-            else
-            {
+            else {
                 if (WAdebugMode) {
                     console.log("WhatsIncognito: Unknown viewOnceMessageV2 type:", e2eMessage.viewOnceMessageV2.message);
                 }
                 throw new Error("Unknown viewOnceMessageV2 type");
             }
         }
-        else if (hasViewOnceV2Extension)
-        {
+        else if (hasViewOnceV2Extension) {
             if (WAdebugMode) {
                 console.log("WhatsIncognito: Processing viewOnceMessageV2Extension");
                 console.log("WhatsIncognito: viewOnceMessageV2Extension.message:", e2eMessage.viewOnceMessageV2Extension.message);
             }
-            
-            if (e2eMessage.viewOnceMessageV2Extension.message?.audioMessage !== null && e2eMessage.viewOnceMessageV2Extension.message?.audioMessage !== undefined) 
-            {
+
+            if (e2eMessage.viewOnceMessageV2Extension.message?.audioMessage !== null && e2eMessage.viewOnceMessageV2Extension.message?.audioMessage !== undefined) {
                 retrievedMsg = e2eMessage.viewOnceMessageV2Extension.message.audioMessage;
                 type = "audio";
                 if (WAdebugMode) {
                     console.log("WhatsIncognito: Detected audio message in viewOnceMessageV2Extension");
                 }
             }
-            else if (e2eMessage.viewOnceMessageV2Extension.message?.imageMessage !== null && e2eMessage.viewOnceMessageV2Extension.message?.imageMessage !== undefined) 
-            {
+            else if (e2eMessage.viewOnceMessageV2Extension.message?.imageMessage !== null && e2eMessage.viewOnceMessageV2Extension.message?.imageMessage !== undefined) {
                 retrievedMsg = e2eMessage.viewOnceMessageV2Extension.message.imageMessage;
                 type = "image";
                 caption = retrievedMsg.caption;
@@ -890,8 +1196,7 @@ async function interceptViewOnceMessages(e2eMessage, messageId)
                     console.log("WhatsIncognito: Detected image message in viewOnceMessageV2Extension");
                 }
             }
-            else if (e2eMessage.viewOnceMessageV2Extension.message?.videoMessage !== null && e2eMessage.viewOnceMessageV2Extension.message?.videoMessage !== undefined) 
-            {
+            else if (e2eMessage.viewOnceMessageV2Extension.message?.videoMessage !== null && e2eMessage.viewOnceMessageV2Extension.message?.videoMessage !== undefined) {
                 retrievedMsg = e2eMessage.viewOnceMessageV2Extension.message.videoMessage;
                 type = "video";
                 caption = retrievedMsg.caption;
@@ -899,20 +1204,19 @@ async function interceptViewOnceMessages(e2eMessage, messageId)
                     console.log("WhatsIncognito: Detected video message in viewOnceMessageV2Extension");
                 }
             }
-            else 
-            {
+            else {
                 if (WAdebugMode) {
                     console.log("WhatsIncognito: Unknown viewOnceMessageV2Extension type:", e2eMessage.viewOnceMessageV2Extension?.message);
                 }
                 throw new Error("Unknown viewOnceMessageV2 or viewOnceMessageV2Extension type");
             }
         }
-        
+
         if (WAdebugMode) {
             console.log("WhatsIncognito: Processing view-once message of type:", type);
             console.log("WhatsIncognito: Retrieved message:", retrievedMsg);
         }
-        
+
         // Make sure we have a valid message
         if (!retrievedMsg || Object.keys(retrievedMsg).length === 0) {
             if (WAdebugMode) {
@@ -920,7 +1224,7 @@ async function interceptViewOnceMessages(e2eMessage, messageId)
             }
             return;
         }
-        
+
         // Check that we have the required properties
         if (!retrievedMsg.mediaKey || !retrievedMsg.fileEncSha256 || !retrievedMsg.fileSha256 || !retrievedMsg.directPath || !retrievedMsg.mimetype) {
             if (WAdebugMode) {
@@ -928,13 +1232,12 @@ async function interceptViewOnceMessages(e2eMessage, messageId)
             }
             return;
         }
-        
+
         const mediaKeyEncoded = btoa(String.fromCharCode.apply(null, retrievedMsg.mediaKey));
         const encodedencFileHash = btoa(String.fromCharCode.apply(null, retrievedMsg.fileEncSha256));
         const encodedfileSha256 = btoa(String.fromCharCode.apply(null, retrievedMsg.fileSha256));
-        
-        if (window.WhatsAppAPI !== undefined)
-        {
+
+        if (window.WhatsAppAPI !== undefined) {
             try {
                 const decryptedData = await WhatsAppAPI.downloadManager.downloadAndMaybeDecrypt({
                     directPath: retrievedMsg.directPath,
@@ -944,10 +1247,10 @@ async function interceptViewOnceMessages(e2eMessage, messageId)
 
                 body = arrayBufferToBase64(decryptedData);
                 dataURI = "data:" + retrievedMsg.mimetype + ";base64," + body;
-                
+
                 // Get sender information
                 const senderInfo = await getSenderInfo(messageId);
-                
+
                 // store in indexedDB called "viewOnce" with messageID and dataURI 
                 var viewOnceDBOpenRequest = indexedDB.open("viewOnce", 3); // Updated version
                 viewOnceDBOpenRequest.onupgradeneeded = function (event) {
@@ -969,9 +1272,9 @@ async function interceptViewOnceMessages(e2eMessage, messageId)
                 viewOnceDBOpenRequest.onsuccess = () => {
                     var viewOnceDB = viewOnceDBOpenRequest.result;
                     var viewOnceTransaction = viewOnceDB.transaction('msgs', "readwrite");
-                    var viewOnceRequest = viewOnceTransaction.objectStore("msgs").add({ 
-                        id: messageId, 
-                        dataURI: dataURI, 
+                    var viewOnceRequest = viewOnceTransaction.objectStore("msgs").add({
+                        id: messageId,
+                        dataURI: dataURI,
                         caption: caption,
                         type: type,
                         mimetype: retrievedMsg.mimetype,
@@ -1000,11 +1303,10 @@ async function interceptViewOnceMessages(e2eMessage, messageId)
                 console.error("WhatsIncognito: Error decrypting viewOnce message:", error);
             }
         }
-        else
-        {
+        else {
             // retry in 5 seconds
             // don't know why it's 5 seconds, but that's what is done for decrypting deleted messages 
-            setTimeout(function(){
+            setTimeout(function () {
                 interceptViewOnceMessages(e2eMessage, messageId)
             }, 5000);
         }
@@ -1036,27 +1338,22 @@ async function getSenderInfo(messageId) {
     }
 }
 
-function printNode(node, isIncoming = false, decryptedFrameLength)
-{
+function printNode(node, isIncoming = false, decryptedFrameLength) {
     var objectToPrint = xmlDebugging ? nodeToElement(node) : node;
-    if (isIncoming)
-    {
+    if (isIncoming) {
         console.log("[In] Received binary (" + decryptedFrameLength + " bytes, decrypted)): ");
     }
-    else
-    {
+    else {
         console.log("[Out] Sending binary (" + decryptedFrameLength + " bytes, decrypted): ");
     }
 
     console.log(node);
 
-    if (xmlDebugging)
-    {
+    if (xmlDebugging) {
         console.dirxml(objectToPrint);
         objectToPrint.remove();
     }
-    else
-    {
+    else {
         console.log(objectToPrint);
     }
 }
@@ -1067,8 +1364,7 @@ function printNode(node, isIncoming = false, decryptedFrameLength)
 // Miscellaneous 
 //
 
-function exposeWhatsAppAPI()
-{
+function exposeWhatsAppAPI() {
     window.WhatsAppAPI = {};
 
     // React Native
@@ -1083,24 +1379,32 @@ function exposeWhatsAppAPI()
     window.WhatsAppAPI.WAWebWidFactory = require("WAWebWidFactory");
     window.WhatsAppAPI.WAWebWidToJid = require("WAWebWidToJid");
 
-    if (window.WhatsAppAPI.Seen == undefined)
-    {
+    if (window.WhatsAppAPI.Seen == undefined) {
         console.error("WhatsAppWebIncognito: Can't find the WhatsApp API. Stuff might not work.");
     }
 }
 
-function initialize()
-{
+function initialize() {
     if (WALogs)
         hookLogs();
     initializeDeletedMessagesDB();
-    
+
+    // Load exclusions
+    var storedExclusions = localStorage.getItem("WAIncognito_TypingExclusions");
+    if (storedExclusions) {
+        try {
+            typingNotificationExclusions = new Set(JSON.parse(storedExclusions));
+            console.log("WAIncognito: Loaded " + typingNotificationExclusions.size + " typing exclusions.");
+        } catch (e) {
+            console.error("WAIncognito: Error loading typing exclusions", e);
+        }
+    }
+
     // Start the stay online functionality
     startStayOnline();
 }
 
-function hookLogs()
-{
+function hookLogs() {
     // we don't want extension-related errors to be silently sent out
 
     var originalSendLogs = window.SEND_LOGS;
@@ -1108,57 +1412,48 @@ function hookLogs()
     var originalLog = window.__LOG__; // TODO: Find log function for 2.3000 ( d("WALogger").LOG,  d("WALogger").ERROR ?)
 
     Object.defineProperty(window, 'onunhandledrejection', {
-        set: function(value) { originalOnUnhandledRejection = value; },
-        get: function() {return hookedPromiseError;}
+        set: function (value) { originalOnUnhandledRejection = value; },
+        get: function () { return hookedPromiseError; }
     });
     Object.defineProperty(window, '__LOG__', {
-        set: function(value) { originalLog = value; },
-        get: function() {return hookedLog;}
+        set: function (value) { originalLog = value; },
+        get: function () { return hookedLog; }
     });
 
-    function hookedPromiseError(event)
-    {
+    function hookedPromiseError(event) {
         debugger;
         console.error("Unhandled promise rejection:");
         console.error(errorObject);
         return originalOnUnhandledRejection.call(event);
     }
 
-    function hookedLog(errorLevel)
-    {        
-        return function(strings, values)
-        {
+    function hookedLog(errorLevel) {
+        return function (strings, values) {
             var message = "[WhatsApp][" + errorLevel + "] -- " + makeLogMessage(arguments);
 
-            if (errorLevel <= 2 && WAdebugMode)
-            {
+            if (errorLevel <= 2 && WAdebugMode) {
                 console.log(message);
             }
-            else if (errorLevel > 2 && WAdebugMode)
-            {
+            else if (errorLevel > 2 && WAdebugMode) {
                 console.error(message);
             }
-            else if (errorLevel > 2)
-            {
+            else if (errorLevel > 2) {
                 console.info(message);
             }
 
-            if (originalLog)
-            {
+            if (originalLog) {
                 var originalLogFn = originalLog(errorLevel);
                 return originalLogFn.apply(null, arguments);
             }
-            
+
         };
     }
 }
 
-function initializeDeletedMessagesDB()
-{
+function initializeDeletedMessagesDB() {
     var deletedDBOpenRequest = indexedDB.open("deletedMsgs", 2);
 
-    deletedDBOpenRequest.onupgradeneeded = function (event)
-    {
+    deletedDBOpenRequest.onupgradeneeded = function (event) {
         // triggers if the client had no database
         // ...perform initialization...
         debugger;
@@ -1175,8 +1470,7 @@ function initializeDeletedMessagesDB()
         // @type IDBTransaction
         var txn = request.transaction;
 
-        switch (event.oldVersion)
-        {
+        switch (event.oldVersion) {
             case 0:
                 var store = db.createObjectStore('msgs', { keyPath: 'id' });
                 console.log('WhatsIncognito: Deleted messages database generated');
@@ -1184,25 +1478,22 @@ function initializeDeletedMessagesDB()
                 break;
             case 1:
                 var store = txn.objectStore("msgs");
-                
+
                 store.createIndex("originalID_index", "originalID");
                 break;
         }
     };
-    deletedDBOpenRequest.onerror = function (e)
-    {
+    deletedDBOpenRequest.onerror = function (e) {
         console.error("WhatsIncognito: Error opening database");
         console.error("Error", deletedDBOpenRequest);
         console.error(e);
     };
-    deletedDBOpenRequest.onsuccess = () =>
-    {
+    deletedDBOpenRequest.onsuccess = () => {
         window.deletedMessagesDB = deletedDBOpenRequest.result;
     }
 }
 
-async function saveDeletedMessage(retrievedMsg, deletedMessageKey, revokeMessageID)
-{
+async function saveDeletedMessage(retrievedMsg, deletedMessageKey, revokeMessageID) {
     // Determine author data
     let author = deletedMessageKey.participant.split("@")[0].split(":")[0]
 
@@ -1210,24 +1501,23 @@ async function saveDeletedMessage(retrievedMsg, deletedMessageKey, revokeMessage
     let isMedia = false;
 
     // Stickers & Documents are not considered media for some reason, so we have to check if it has a mediaKey and also set isMedia == true
-    if (retrievedMsg.isMedia || retrievedMsg.mediaKey)
-    {
+    if (retrievedMsg.isMedia || retrievedMsg.mediaKey) {
         isMedia = true;
 
         // get extended media key              
-        try
-        {
-            const decryptedData = await WhatsAppAPI.downloadManager.downloadAndMaybeDecrypt({ directPath: retrievedMsg.directPath, 
-                encFilehash: retrievedMsg.encFilehash, filehash: retrievedMsg.filehash, mediaKey: retrievedMsg.mediaKey, 
-                type: retrievedMsg.type, signal: (new AbortController).signal });
+        try {
+            const decryptedData = await WhatsAppAPI.downloadManager.downloadAndMaybeDecrypt({
+                directPath: retrievedMsg.directPath,
+                encFilehash: retrievedMsg.encFilehash, filehash: retrievedMsg.filehash, mediaKey: retrievedMsg.mediaKey,
+                type: retrievedMsg.type, signal: (new AbortController).signal
+            });
 
             body = arrayBufferToBase64(decryptedData);
 
         }
         catch (e) { console.error(e); }
     }
-    else 
-    {   
+    else {
         body = retrievedMsg.body;
     }
 
@@ -1246,40 +1536,32 @@ async function saveDeletedMessage(retrievedMsg, deletedMessageKey, revokeMessage
     deletedMsgContents.lng = retrievedMsg.lng;
     deletedMsgContents.lat = retrievedMsg.lat;
 
-    if ("id" in deletedMsgContents)
-    {
+    if ("id" in deletedMsgContents) {
         const transcation = window.deletedMessagesDB.transaction('msgs', "readwrite");
         let request = transcation.objectStore("msgs").add(deletedMsgContents);
-        request.onerror = (e) =>
-        {
-            if (request.error.name == "ConstraintError")
-            {
+        request.onerror = (e) => {
+            if (request.error.name == "ConstraintError") {
                 // ConstraintError occurs when an object with the same id already exists
                 // This will happen when we get the revoke message again from the server
                 console.log("WhatsIncognito: Not saving message becuase the message ID already exists");
-            } 
-            else
-            {
+            }
+            else {
                 console.log("WhatsIncognito: Unexpected error saving deleted message");
             }
         };
-        request.onsuccess = (e) =>
-        {
+        request.onsuccess = (e) => {
             console.log("WhatsIncognito: Saved deleted message with ID " + deletedMsgContents.id + " from " + deletedMsgContents.from + " successfully.");
         }
     }
-    else
-    {
+    else {
         console.log("WhatsIncognito: Deleted message contents not found");
     }
 }
 
-async function checkNodeEncoderSanity(originalFrame, isIncoming=false)
-{
+async function checkNodeEncoderSanity(originalFrame, isIncoming = false) {
     var flags = new Uint8Array(originalFrame)[0];
     var decryptedFrameOpened = originalFrame.slice(1);
-    if (flags & 2)
-    {
+    if (flags & 2) {
         // zlib compressed. decompress
         decryptedFrameOpened = toArrayBuffer(pako.inflate(new Uint8Array(decryptedFrameOpened)));
     }
@@ -1289,12 +1571,10 @@ async function checkNodeEncoderSanity(originalFrame, isIncoming=false)
     // sanity check that our node parsing is deterministic
     var encodedNodeData = await nodeReaderWriter.encodeStanza(realNode, isIncoming);
     var looksGood = isEqualArray(new Uint8Array(decryptedFrameOpened), encodedNodeData.slice(1));
-    if (!looksGood && !isIncoming)
-    {
+    if (!looksGood && !isIncoming) {
         debugger;
     }
-    if (!looksGood && isIncoming)
-    {
+    if (!looksGood && isIncoming) {
         // This can sometimes hit because on the encoding path, strings that represent numbers are always encoded with NIBBLE_8 (255) encoding.
         // But on the decoding path, WhatsApp servers could send us number strings encoded with regular BINARY_8 (252) encoding, 
         // which we will re-encode as NIBBLE_8 (255).
@@ -1310,24 +1590,29 @@ async function checkForTypingNotification(node) {
         if (jid) {
             // Ensure jid is a string before processing
             var jidString = typeof jid === 'object' ? jid.toString() : jid;
-            
+
+            if (typingNotificationExclusions.has(jidString)) {
+                if (WAdebugMode) console.log("Skipping typing notification for excluded JID: " + jidString);
+                return;
+            }
+
             // Debug logging
             if (WAdebugMode) {
                 console.log("[Typing Notification] Presence composing from: " + jidString);
                 console.log("[Typing Notification] Presence node:", node);
             }
-            
+
             // Get the display name for the JID
             var displayName = await getDisplayNameForJID(jidString);
-            
+
             // Log the resolved display name
             if (WAdebugMode) {
                 console.log("[Typing Notification] Resolved display name: " + displayName + " (JID: " + jidString + ")");
             }
-            
+
             // Only show notification if we have a meaningful display name
-            if (displayName && displayName.trim() !== '' && 
-                !displayName.includes('@') && 
+            if (displayName && displayName.trim() !== '' &&
+                !displayName.includes('@') &&
                 !displayName.includes('lid') &&
                 displayName.length > 1) {
                 // Show both UI and system notifications
@@ -1346,23 +1631,28 @@ async function checkForTypingNotification(node) {
                 if (jid) {
                     // Ensure jid is a string before processing
                     var jidString = typeof jid === 'object' ? jid.toString() : jid;
-                    
+
+                    if (typingNotificationExclusions.has(jidString)) {
+                        if (WAdebugMode) console.log("Skipping typing notification for excluded JID: " + jidString);
+                        break;
+                    }
+
                     // Debug logging
                     if (WAdebugMode) {
                         console.log("[Typing Notification] Chatstate composing from: " + jidString);
                         console.log("[Typing Notification] Chatstate node:", node);
                     }
-                    
+
                     var displayName = await getDisplayNameForJID(jidString);
-                    
+
                     // Log the resolved display name
                     if (WAdebugMode) {
                         console.log("[Typing Notification] Resolved display name: " + displayName + " (JID: " + jidString + ")");
                     }
-                    
+
                     // Only show notification if we have a meaningful display name
-                    if (displayName && displayName.trim() !== '' && 
-                        !displayName.includes('@') && 
+                    if (displayName && displayName.trim() !== '' &&
+                        !displayName.includes('@') &&
                         !displayName.includes('lid') &&
                         displayName.length > 1) {
                         showTypingNotification(displayName, jidString);
@@ -1381,12 +1671,12 @@ async function getDisplayNameForJID(jid) {
     try {
         // Ensure jid is a string
         var jidString = typeof jid === 'object' ? jid.toString() : jid;
-        
+
         // Log the JID for debugging
         if (WAdebugMode) {
             console.log("[Typing Notification] Processing JID: " + jidString);
         }
-        
+
         // Try to get display name using WPP library first (highest priority)
         if (typeof getDisplayNameFromWPP !== 'undefined') {
             try {
@@ -1403,7 +1693,7 @@ async function getDisplayNameForJID(jid) {
                 }
             }
         }
-        
+
         // Handle LID format JIDs
         if (jidString.includes("@lid")) {
             // Extract the numeric portion before @lid
@@ -1411,42 +1701,42 @@ async function getDisplayNameForJID(jid) {
             if (lidNumber.includes(':')) {
                 lidNumber = lidNumber.split(':')[0];
             }
-            
+
             if (WAdebugMode) {
                 console.log("[Typing Notification] Extracted LID number: " + lidNumber);
             }
-            
+
             // Try to find a contact with this LID
             if (window.WhatsAppAPI && WhatsAppAPI.Store) {
                 // Log available collections for debugging
                 if (WAdebugMode) {
                     console.log("[Typing Notification] Available Store collections:", Object.keys(WhatsAppAPI.Store));
                 }
-                
+
                 // Try different contact collection approaches
                 try {
                     var contact = null;
-                    
+
                     // Try Contact collection first
                     if (WhatsAppAPI.Store.Contact && WhatsAppAPI.Store.Contact.get) {
                         contact = WhatsAppAPI.Store.Contact.get(lidNumber);
                     }
-                    
+
                     // Try Contacts collection if Contact doesn't work
                     if (!contact && WhatsAppAPI.Store.Contacts && WhatsAppAPI.Store.Contacts.get) {
                         contact = WhatsAppAPI.Store.Contacts.get(lidNumber);
                     }
-                    
+
                     // Try ContactStore if available
                     if (!contact && WhatsAppAPI.Store.ContactStore && WhatsAppAPI.Store.ContactStore.get) {
                         contact = WhatsAppAPI.Store.ContactStore.get(lidNumber);
                     }
-                    
+
                     if (contact) {
                         if (WAdebugMode) {
                             console.log("[Typing Notification] Found contact by LID:", contact);
                         }
-                        
+
                         // Try multiple name properties in order of preference
                         var nameProperties = ['displayName', 'name', 'formattedName', 'pushname', 'shortName'];
                         for (var i = 0; i < nameProperties.length; i++) {
@@ -1465,14 +1755,14 @@ async function getDisplayNameForJID(jid) {
                     }
                 }
             }
-            
+
             // If we can't find by LID, return the LID number
             if (WAdebugMode) {
                 console.log("[Typing Notification] Using LID number as fallback: " + lidNumber);
             }
             return lidNumber;
         }
-        
+
         // Try to get the display name from WhatsApp's API
         if (window.WhatsAppAPI) {
             // First try to get from ChatCollection
@@ -1482,14 +1772,14 @@ async function getDisplayNameForJID(jid) {
                 if (WAdebugMode) {
                     console.log("[Typing Notification] Chat info:", chat);
                 }
-                
+
                 // Try to get contact name from chat
                 if (chat.contact && typeof chat.contact === 'object') {
                     // Log contact information for debugging
                     if (WAdebugMode) {
                         console.log("[Typing Notification] Contact info:", chat.contact);
                     }
-                    
+
                     // Try multiple name properties in order of preference
                     var nameProperties = ['displayName', 'name', 'formattedName', 'pushname', 'shortName'];
                     for (var i = 0; i < nameProperties.length; i++) {
@@ -1502,7 +1792,7 @@ async function getDisplayNameForJID(jid) {
                         }
                     }
                 }
-                
+
                 // Try to get name from chat itself
                 var chatNameProperties = ['name', 'formattedTitle', 'title'];
                 for (var i = 0; i < chatNameProperties.length; i++) {
@@ -1515,7 +1805,7 @@ async function getDisplayNameForJID(jid) {
                     }
                 }
             }
-            
+
             // If we couldn't get it from ChatCollection, try to find it through GUI
             try {
                 var chatElem = findChatEntryElementForJID(jidString);
@@ -1527,7 +1817,7 @@ async function getDisplayNameForJID(jid) {
                             if (WAdebugMode) {
                                 console.log("[Typing Notification] GUI Chat data:", chatData);
                             }
-                            
+
                             if (chatData.contact && typeof chatData.contact === 'object') {
                                 var nameProperties = ['displayName', 'name', 'formattedName', 'pushname', 'shortName'];
                                 for (var i = 0; i < nameProperties.length; i++) {
@@ -1540,7 +1830,7 @@ async function getDisplayNameForJID(jid) {
                                     }
                                 }
                             }
-                            
+
                             var chatNameProperties = ['name', 'formattedTitle', 'title'];
                             for (var i = 0; i < chatNameProperties.length; i++) {
                                 var prop = chatNameProperties[i];
@@ -1559,7 +1849,7 @@ async function getDisplayNameForJID(jid) {
                     console.log("[Typing Notification] Error getting name from GUI:", guiError);
                 }
             }
-            
+
             // Try to get from Contact store directly
             try {
                 if (WhatsAppAPI.Store && WhatsAppAPI.Store.Contact) {
@@ -1567,13 +1857,13 @@ async function getDisplayNameForJID(jid) {
                     if (contactJid.includes(':')) {
                         contactJid = contactJid.split(':')[0];
                     }
-                    
+
                     var contact = WhatsAppAPI.Store.Contact.get(contactJid);
                     if (contact) {
                         if (WAdebugMode) {
                             console.log("[Typing Notification] Found contact directly:", contact);
                         }
-                        
+
                         var nameProperties = ['displayName', 'name', 'formattedName', 'pushname', 'shortName'];
                         for (var i = 0; i < nameProperties.length; i++) {
                             var prop = nameProperties[i];
@@ -1592,17 +1882,17 @@ async function getDisplayNameForJID(jid) {
                 }
             }
         }
-        
+
         // Fallback to extracting from JID
         var phoneNumber = jidString.split('@')[0];
         if (phoneNumber.includes(':')) {
             phoneNumber = phoneNumber.split(':')[0];
         }
-        
+
         if (WAdebugMode) {
             console.log("[Typing Notification] Using phone number: " + phoneNumber);
         }
-        
+
         return phoneNumber;
     } catch (e) {
         console.error("Error getting display name for JID: " + jid, e);
@@ -1617,13 +1907,13 @@ function showTypingNotification(displayName, jid) {
         if (WAdebugMode) {
             console.log("[Typing Notification] Showing notification for: " + displayName + " (JID: " + jid + ")");
         }
-        
+
         // Store typing log
         storeTypingLog(displayName, jid);
-        
+
         // Show UI notification
         showUITypingNotification(displayName);
-        
+
         // Show system notification
         showSystemTypingNotification(displayName);
     } catch (error) {
@@ -1652,18 +1942,18 @@ function showUITypingNotification(displayName) {
             max-width: 300px;
             word-wrap: break-word;
         `;
-        
+
         // Check if document.body is available
         if (document.body) {
             document.body.appendChild(notification);
-            
+
             // Log the UI notification for debugging
             if (WAdebugMode) {
                 console.log("[Typing Notification] UI notification shown: " + displayName + " is typing...");
             }
-            
+
             // Remove notification after 5 seconds
-            setTimeout(function() {
+            setTimeout(function () {
                 if (notification.parentNode) {
                     notification.parentNode.removeChild(notification);
                     if (WAdebugMode) {
@@ -1683,19 +1973,19 @@ function showSystemTypingNotification(displayName) {
         console.warn('Notification API not available');
         return;
     }
-    
+
     // Log the system notification request
     if (WAdebugMode) {
         console.log("[Typing Notification] Requesting system notification for: " + displayName);
     }
-    
+
     // Request notification permission if not already granted
     if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
-        Notification.requestPermission().then(function(permission) {
+        Notification.requestPermission().then(function (permission) {
             if (permission === 'granted') {
                 createSystemNotification(displayName);
             }
-        }).catch(function(error) {
+        }).catch(function (error) {
             console.error('Error requesting notification permission:', error);
         });
     } else if (Notification.permission === 'granted') {
@@ -1710,12 +2000,12 @@ function createSystemNotification(displayName) {
         if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
             iconUrl = chrome.runtime.getURL('images/icon_128_blue.png');
         }
-        
+
         // Log the system notification creation
         if (WAdebugMode) {
             console.log("[Typing Notification] Creating system notification: " + displayName + " is typing...");
         }
-        
+
         new Notification('WhatsApp Typing Notification', {
             body: displayName + ' is typing...',
             icon: iconUrl
@@ -1731,7 +2021,7 @@ function storeTypingLog(displayName, jid) {
         // Get additional information
         var currentPageTitle = document.title || "WhatsApp Web";
         var currentUrl = window.location.href || "https://web.whatsapp.com";
-        
+
         // Create log entry
         var logEntry = {
             id: generateLogId(),
@@ -1746,26 +2036,26 @@ function storeTypingLog(displayName, jid) {
             userAgent: navigator.userAgent,
             language: navigator.language || "unknown"
         };
-        
+
         // Log for debugging
         if (WAdebugMode) {
             console.log("[Typing Notification] Storing log entry:", logEntry);
         }
-        
+
         // Send message to background script to store the log
         if (typeof chrome !== 'undefined' && chrome.runtime) {
             try {
                 if (WAdebugMode) {
                     console.log("[Typing Notification] Sending log to background:", logEntry);
                 }
-                
+
                 // Try to get the extension ID dynamically first, fallback to hardcoded if needed
                 var extensionId = chrome.runtime.id || "jcklcfpggniemgobbcfjdnlbkegeehgg";
-                
+
                 // Test if background script is available
                 chrome.runtime.sendMessage(extensionId, {
                     name: "ping"
-                }, function(response) {
+                }, function (response) {
                     if (chrome.runtime.lastError) {
                         if (WAdebugMode) {
                             console.log("[Typing Notification] Background script not available, using localStorage");
@@ -1777,7 +2067,7 @@ function storeTypingLog(displayName, jid) {
                         chrome.runtime.sendMessage(extensionId, {
                             name: "storeTypingLog",
                             logEntry: logEntry
-                        }, function(response) {
+                        }, function (response) {
                             if (chrome.runtime.lastError) {
                                 if (WAdebugMode) {
                                     console.log("[Typing Notification] Error sending log to background:", chrome.runtime.lastError);
@@ -1826,15 +2116,15 @@ function fallbackToLocalStorage(logEntry) {
             }
             existingLogs = [];
         }
-        
+
         // Add new log entry
         existingLogs.push(logEntry);
-        
+
         // Keep only the last 1000 entries to prevent storage overflow
         if (existingLogs.length > 1000) {
             existingLogs = existingLogs.slice(-1000);
         }
-        
+
         // Save back to localStorage
         try {
             localStorage.setItem('whatsappActivityLogs', JSON.stringify(existingLogs));
@@ -1865,7 +2155,7 @@ function isWindowVisible() {
         } else if (typeof document.webkitHidden !== 'undefined') {
             return !document.webkitHidden;
         }
-        
+
         // Fallback: check if window is focused
         return document.hasFocus();
     } catch (error) {
@@ -1884,10 +2174,10 @@ function getTypingLogs(callback) {
             try {
                 // Try to get the extension ID dynamically first, fallback to hardcoded if needed
                 var extensionId = chrome.runtime.id || "jcklcfpggniemgobbcfjdnlbkegeehgg";
-                
+
                 chrome.runtime.sendMessage(extensionId, {
                     name: "getTypingLogs"
-                }, function(response) {
+                }, function (response) {
                     if (chrome.runtime.lastError) {
                         if (WAdebugMode) {
                             console.log("[Typing Notification] Error getting logs from background:", chrome.runtime.lastError);
@@ -1953,11 +2243,11 @@ function getTypingLogsWithFilters(options, callback) {
             try {
                 // Try to get the extension ID dynamically first, fallback to hardcoded if needed
                 var extensionId = chrome.runtime.id || "jcklcfpggniemgobbcfjdnlbkegeehgg";
-                
+
                 chrome.runtime.sendMessage(extensionId, {
                     name: "getTypingLogsWithFilters",
                     options: options
-                }, function(response) {
+                }, function (response) {
                     if (chrome.runtime.lastError) {
                         if (WAdebugMode) {
                             console.log("[Typing Notification] Error getting filtered logs from background:", chrome.runtime.lastError);
@@ -1994,44 +2284,44 @@ function getTypingLogsWithFilters(options, callback) {
 // Fallback function for client-side filtering
 function fallbackGetTypingLogsWithFilters(options, callback) {
     try {
-        fallbackGetTypingLogs(function(allLogs) {
+        fallbackGetTypingLogs(function (allLogs) {
             try {
                 // Apply filters if provided
                 if (options) {
                     // Filter by user name
                     if (options.userName) {
-                        allLogs = allLogs.filter(log => 
+                        allLogs = allLogs.filter(log =>
                             log.userName && log.userName.toLowerCase().includes(options.userName.toLowerCase())
                         );
                     }
-                    
+
                     // Filter by date range
                     if (options.startDate) {
                         var startDate = new Date(options.startDate).getTime();
                         allLogs = allLogs.filter(log => log.timestamp >= startDate);
                     }
-                    
+
                     if (options.endDate) {
                         var endDate = new Date(options.endDate).getTime();
                         allLogs = allLogs.filter(log => log.timestamp <= endDate);
                     }
-                    
+
                     // Filter by tab visibility
                     if (options.onWhatsappTab !== undefined) {
                         allLogs = allLogs.filter(log => log.onWhatsappTab === options.onWhatsappTab);
                     }
                 }
-                
+
                 // Sort by timestamp (newest first)
                 allLogs.sort((a, b) => b.timestamp - a.timestamp);
-                
+
                 // Apply pagination if provided
                 if (options && options.page !== undefined && options.pageSize !== undefined) {
                     var startIndex = (options.page - 1) * options.pageSize;
                     var endIndex = startIndex + options.pageSize;
                     allLogs = allLogs.slice(startIndex, endIndex);
                 }
-                
+
                 if (callback && typeof callback === 'function') {
                     callback(allLogs);
                 }
@@ -2062,10 +2352,10 @@ function getTypingLogStats(callback) {
             try {
                 // Try to get the extension ID dynamically first, fallback to hardcoded if needed
                 var extensionId = chrome.runtime.id || "jcklcfpggniemgobbcfjdnlbkegeehgg";
-                
+
                 chrome.runtime.sendMessage(extensionId, {
                     name: "getTypingLogStats"
-                }, function(response) {
+                }, function (response) {
                     if (chrome.runtime.lastError) {
                         if (WAdebugMode) {
                             console.log("[Typing Notification] Error getting stats from background:", chrome.runtime.lastError);
@@ -2116,7 +2406,7 @@ function getTypingLogStats(callback) {
 // Fallback function for client-side stats calculation
 function fallbackGetTypingLogStats(callback) {
     try {
-        fallbackGetTypingLogs(function(allLogs) {
+        fallbackGetTypingLogs(function (allLogs) {
             try {
                 if (allLogs.length === 0) {
                     var emptyStats = {
@@ -2132,18 +2422,18 @@ function fallbackGetTypingLogStats(callback) {
                     }
                     return;
                 }
-                
+
                 // Count statistics
                 var userCounts = {};
                 var onTabCount = 0;
                 var offTabCount = 0;
-                
+
                 allLogs.forEach(log => {
                     // Count user occurrences
                     if (log.userName) {
                         userCounts[log.userName] = (userCounts[log.userName] || 0) + 1;
                     }
-                    
+
                     // Count tab visibility
                     if (log.onWhatsappTab) {
                         onTabCount++;
@@ -2151,18 +2441,18 @@ function fallbackGetTypingLogStats(callback) {
                         offTabCount++;
                     }
                 });
-                
+
                 // Find most active user
                 var mostActiveUser = null;
                 var mostActiveUserCount = 0;
-                
+
                 for (var user in userCounts) {
                     if (userCounts[user] > mostActiveUserCount) {
                         mostActiveUser = user;
                         mostActiveUserCount = userCounts[user];
                     }
                 }
-                
+
                 var stats = {
                     totalLogs: allLogs.length,
                     uniqueUsers: Object.keys(userCounts).length,
@@ -2171,7 +2461,7 @@ function fallbackGetTypingLogStats(callback) {
                     mostActiveUser: mostActiveUser,
                     mostActiveUserCount: mostActiveUserCount
                 };
-                
+
                 if (callback && typeof callback === 'function') {
                     callback(stats);
                 }
@@ -2216,10 +2506,10 @@ function clearTypingLogs(callback) {
             try {
                 // Try to get the extension ID dynamically first, fallback to hardcoded if needed
                 var extensionId = chrome.runtime.id || "jcklcfpggniemgobbcfjdnlbkegeehgg";
-                
+
                 chrome.runtime.sendMessage(extensionId, {
                     name: "clearTypingLogs"
-                }, function(response) {
+                }, function (response) {
                     if (chrome.runtime.lastError) {
                         if (WAdebugMode) {
                             console.log("[Typing Notification] Error clearing logs in background:", chrome.runtime.lastError);
@@ -2284,11 +2574,11 @@ function exportTypingLogs(format, callback) {
             try {
                 // Try to get the extension ID dynamically first, fallback to hardcoded if needed
                 var extensionId = chrome.runtime.id || "jcklcfpggniemgobbcfjdnlbkegeehgg";
-                
+
                 chrome.runtime.sendMessage(extensionId, {
                     name: "exportTypingLogs",
                     format: format
-                }, function(response) {
+                }, function (response) {
                     if (chrome.runtime.lastError) {
                         if (WAdebugMode) {
                             console.log("[Typing Notification] Error exporting logs from background:", chrome.runtime.lastError);
@@ -2325,10 +2615,10 @@ function exportTypingLogs(format, callback) {
 // Fallback function for client-side export
 function fallbackExportTypingLogs(format, callback) {
     try {
-        fallbackGetTypingLogs(function(logs) {
+        fallbackGetTypingLogs(function (logs) {
             try {
                 var exportedData = null;
-                
+
                 if (format === 'csv') {
                     // Convert to CSV format
                     var csvContent = "ID,User Name,JID,Action,Date Time,On WhatsApp Tab,Page Title,Page URL,Timestamp\n";
@@ -2352,7 +2642,7 @@ function fallbackExportTypingLogs(format, callback) {
                     // Default to JSON
                     exportedData = JSON.stringify(logs, null, 2);
                 }
-                
+
                 if (callback && typeof callback === 'function') {
                     callback(exportedData);
                 }
@@ -2375,22 +2665,91 @@ function fallbackExportTypingLogs(format, callback) {
     }
 }
 
+// Function to load all chats efficiently for autocomplete
+function getAllChatsSimple() {
+    try {
+        var allChats = null;
+
+        // Priority 1: Use WPP if available (User Priority)
+        if (typeof window.WPP !== 'undefined' && window.WPP.chat && typeof window.WPP.chat.list === 'function') {
+            try {
+                allChats = window.WPP.chat.list();
+                if (WAdebugMode) console.log("WAIncognito: Retrieved chats using WPP");
+            } catch (e) {
+                console.error("WAIncognito: Error retrieving chats from WPP", e);
+            }
+        }
+
+        // Priority 2: Use WhatsAppAPI (Internal)
+        if (!allChats && window.WhatsAppAPI) {
+            if (WhatsAppAPI.ChatCollection && typeof WhatsAppAPI.ChatCollection.getAll === 'function') {
+                allChats = WhatsAppAPI.ChatCollection.getAll();
+            } else if (WhatsAppAPI.Store) {
+                if (WhatsAppAPI.Store.Chat && WhatsAppAPI.Store.Chat.models) allChats = WhatsAppAPI.Store.Chat.models;
+                else if (WhatsAppAPI.Store.Chats && WhatsAppAPI.Store.Chats.models) allChats = WhatsAppAPI.Store.Chats.models;
+            }
+        }
+
+        if (!allChats) return [];
+
+        if (typeof allChats.toArray === 'function') allChats = allChats.toArray();
+        if (!Array.isArray(allChats) && typeof allChats === 'object') allChats = Object.values(allChats);
+        if (!Array.isArray(allChats)) return [];
+
+        return allChats.map(function (chat) {
+            var jid = 'Unknown';
+            // Handle WPP structure (often properties are directly on the object) or Store structure
+
+            // Try to find JID
+            if (chat.id) {
+                if (typeof chat.id === 'object' && chat.id._serialized) jid = chat.id._serialized;
+                else if (typeof chat.id === 'string') jid = chat.id;
+            } else if (chat.jid) {
+                if (typeof chat.jid === 'object' && chat.jid._serialized) jid = chat.jid._serialized;
+                else if (typeof chat.jid === 'string') jid = chat.jid;
+            }
+
+            if (typeof jid === 'object') jid = jid.toString();
+
+            var name = 'Unknown';
+            if (chat.contact) {
+                name = chat.contact.displayName || chat.contact.name || chat.contact.pushname || chat.contact.formattedName;
+            }
+            // WPP often has name directly
+            if (!name || name === 'Unknown') name = chat.name || chat.formattedTitle || chat.title || chat.pushname;
+
+            // Fallback for WPP contact details if separated
+            if ((!name || name === 'Unknown') && chat.contact && typeof chat.contact.get === 'function') {
+                // Some WPP versions have contact getters
+            }
+
+            return {
+                jid: jid,
+                name: name || jid
+            };
+        }).filter(function (chat) { return chat.jid !== 'Unknown' && chat.jid.includes('@'); });
+    } catch (e) {
+        console.error("Error in getAllChatsSimple", e);
+        return [];
+    }
+}
+
 // Function to load all chats and log their JIDs/LIDs and names
 // Added limit parameter to prevent stack overflow
 function loadAllChatsAndLog(limit) {
     try {
         // Set default limit if not provided
         var chatLimit = limit && typeof limit === 'number' ? limit : null;
-        
+
         if (WAdebugMode) {
             console.log("[Chat Loader] Loading chats" + (chatLimit ? " (limit: " + chatLimit + ")" : ""));
         }
-        
+
         // Check if WhatsApp API is available
         if (window.WhatsAppAPI) {
             // Try different approaches to get chats
             var allChats = null;
-            
+
             // Method 1: Try ChatCollection
             if (WhatsAppAPI.ChatCollection && typeof WhatsAppAPI.ChatCollection.getAll === 'function') {
                 try {
@@ -2401,7 +2760,7 @@ function loadAllChatsAndLog(limit) {
                     }
                 }
             }
-            
+
             // Method 2: Try Store if available
             if ((!allChats || !Array.isArray(allChats)) && WhatsAppAPI.Store) {
                 if (WhatsAppAPI.Store.Chat && typeof WhatsAppAPI.Store.Chat.models === 'object') {
@@ -2422,7 +2781,7 @@ function loadAllChatsAndLog(limit) {
                     }
                 }
             }
-            
+
             // Convert to array if it's an object
             if (allChats && !Array.isArray(allChats) && typeof allChats === 'object') {
                 // Try to convert to array
@@ -2441,20 +2800,20 @@ function loadAllChatsAndLog(limit) {
                     allChats = Object.values(allChats);
                 }
             }
-            
+
             if (allChats && Array.isArray(allChats)) {
                 if (WAdebugMode) {
                     console.log("[Chat Loader] Found " + allChats.length + " chats");
                 }
-                
+
                 var chatData = [];
-                
+
                 // Determine how many chats to process
                 var chatsToProcess = chatLimit ? Math.min(chatLimit, allChats.length) : allChats.length;
-                
+
                 // Process chats one by one with a small delay to prevent stack overflow
                 var index = 0;
-                
+
                 function processNextChat() {
                     if (index >= chatsToProcess) {
                         // Finished processing
@@ -2464,7 +2823,7 @@ function loadAllChatsAndLog(limit) {
                         }
                         return chatData;
                     }
-                    
+
                     var chat = allChats[index];
                     try {
                         if (!chat) {
@@ -2472,17 +2831,17 @@ function loadAllChatsAndLog(limit) {
                             setTimeout(processNextChat, 1); // Small delay
                             return;
                         }
-                        
+
                         var jid = 'Unknown JID';
                         var name = 'Unknown';
-                        
+
                         // Extract JID
                         if (chat.id) {
                             jid = typeof chat.id === 'object' ? chat.id._serialized || chat.id.toString() : chat.id;
                         } else if (chat.jid) {
                             jid = typeof chat.jid === 'object' ? chat.jid._serialized || chat.jid.toString() : chat.jid;
                         }
-                        
+
                         // Try to get the name from different sources
                         if (chat.contact) {
                             if (chat.contact.displayName && chat.contact.displayName.trim() !== '') {
@@ -2495,22 +2854,22 @@ function loadAllChatsAndLog(limit) {
                                 name = chat.contact.formattedName;
                             }
                         }
-                        
+
                         if (name === 'Unknown' && chat.name && chat.name.trim() !== '') {
                             name = chat.name;
                         }
-                        
+
                         if (name === 'Unknown' && chat.formattedTitle && chat.formattedTitle.trim() !== '') {
                             name = chat.formattedTitle;
                         }
-                        
+
                         // Store chat data
                         chatData.push({
                             index: index + 1,
                             jid: jid,
                             name: name
                         });
-                        
+
                         // Log chat information
                         if (WAdebugMode) {
                             console.log("[Chat Loader] Chat " + (index + 1) + ": JID=" + jid + ", Name=" + name);
@@ -2520,20 +2879,20 @@ function loadAllChatsAndLog(limit) {
                             console.log("[Chat Loader] Error processing chat " + (index + 1) + ":", chatError);
                         }
                     }
-                    
+
                     index++;
                     setTimeout(processNextChat, 1); // Small delay to prevent stack overflow
                 }
-                
+
                 // Start processing
                 processNextChat();
-                
+
                 return chatData;
             } else {
                 if (WAdebugMode) {
                     console.log("[Chat Loader] No chats found or invalid format");
                     console.log("[Chat Loader] Available WhatsAppAPI objects:", Object.keys(WhatsAppAPI));
-                    
+
                     // Try to explore Store if available
                     if (WhatsAppAPI.Store) {
                         console.log("[Chat Loader] Available Store objects:", Object.keys(WhatsAppAPI.Store));
@@ -2545,7 +2904,7 @@ function loadAllChatsAndLog(limit) {
                 console.log("[Chat Loader] WhatsApp API not available");
             }
         }
-        
+
         return [];
     } catch (error) {
         if (WAdebugMode) {
@@ -2563,24 +2922,24 @@ function playBeepSound() {
             console.warn('AudioContext not available');
             return;
         }
-        
+
         // Create audio context
         var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        
+
         // Play three beeps with 200ms interval
         for (let i = 0; i < 3; i++) {
-            setTimeout(function() {
+            setTimeout(function () {
                 try {
                     var oscillator = audioCtx.createOscillator();
                     var gainNode = audioCtx.createGain();
-                    
+
                     oscillator.connect(gainNode);
                     gainNode.connect(audioCtx.destination);
-                    
+
                     oscillator.type = 'sine';
                     oscillator.frequency.value = 800; // 800 Hz
                     gainNode.gain.value = 0.3; // Volume
-                    
+
                     oscillator.start();
                     oscillator.stop(audioCtx.currentTime + 0.1); // 100ms beep
                 } catch (e) {
@@ -2598,11 +2957,11 @@ var stayOnlineInterval = null;
 
 function startStayOnline() {
     // Listen for options updates
-    document.addEventListener('onOptionsUpdate', function(e) {
+    document.addEventListener('onOptionsUpdate', function (e) {
         var options = JSON.parse(e.detail);
         if ('stayOnline' in options) {
             stayOnlineEnabled = options.stayOnline;
-            
+
             if (stayOnlineEnabled) {
                 // Start sending periodic presence updates
                 startPresenceUpdates();
@@ -2612,7 +2971,7 @@ function startStayOnline() {
             }
         }
     });
-    
+
     // Initial check
     if (stayOnlineEnabled) {
         startPresenceUpdates();
@@ -2624,12 +2983,12 @@ function startPresenceUpdates() {
     if (stayOnlineInterval) {
         clearInterval(stayOnlineInterval);
     }
-    
+
     // Send initial presence update
     sendPresenceUpdate();
-    
+
     // Send presence updates every 15 seconds
-    stayOnlineInterval = setInterval(function() {
+    stayOnlineInterval = setInterval(function () {
         sendPresenceUpdate();
     }, 15000);
 }
@@ -2646,8 +3005,8 @@ function sendPresenceUpdate() {
         // Make sure WhatsApp API is available
         if (window.WhatsAppAPI && window.WhatsAppAPI.sendPresenceStatusProtocol) {
             // Send available presence status
-            window.WhatsAppAPI.sendPresenceStatusProtocol({name:"", status:"available"});
-            
+            window.WhatsAppAPI.sendPresenceStatusProtocol({ name: "", status: "available" });
+
             if (WAdebugMode) {
                 console.log("[Stay Online] Sent presence update");
             }
@@ -2660,28 +3019,28 @@ function sendPresenceUpdate() {
 }
 
 // Test function to demonstrate UI functionality
-window.testWhatsAppActivityUI = function() {
+window.testWhatsAppActivityUI = function () {
     console.log("Testing WhatsApp Activity Logs UI...");
-    
+
     // Show the activity logs UI
     window.showWhatsAppActivityLogs();
-    
+
     console.log("WhatsApp Activity Logs UI should now be visible.");
 };
 
 // Test function to load and display all chats
-window.testLoadAllChats = function(limit) {
+window.testLoadAllChats = function (limit) {
     console.log("Loading chats" + (limit ? " (limit: " + limit + ")" : ""));
-    
+
     var chats = window.loadAllChatsAndLog(limit);
-    
+
     if (chats && chats.length > 0) {
         console.log("Successfully loaded " + chats.length + " chats:");
         console.table(chats);
     } else {
         console.log("No chats loaded or error occurred.");
     }
-    
+
     return chats;
 };
 
