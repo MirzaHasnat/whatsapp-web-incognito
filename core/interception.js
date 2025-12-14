@@ -175,6 +175,59 @@ window.showWhatsAppActivityLogs = function () {
     header.appendChild(title);
     header.appendChild(closeButton);
 
+    // View state
+    var currentView = 'typing'; // 'typing' or 'online'
+
+    // Create Tabs
+    var tabsContainer = document.createElement('div');
+    tabsContainer.style.cssText = `
+        display: flex;
+        background-color: #f0f2f5;
+        border-bottom: 1px solid #d0d7de;
+    `;
+
+    function createTab(text, value, isActive) {
+        var tab = document.createElement('div');
+        tab.textContent = text;
+        tab.style.cssText = `
+            padding: 12px 24px;
+            cursor: pointer;
+            font-weight: 600;
+            color: ${isActive ? '#008069' : '#667781'};
+            border-bottom: 3px solid ${isActive ? '#008069' : 'transparent'};
+            transition: all 0.2s;
+        `;
+        tab.onclick = function () {
+            currentView = value;
+            updateTabs();
+            // Update UI
+            displayLogs(); // Will implement view switching inside displayLogs
+            updateStats();
+
+            // Update footer buttons based on view
+            if (currentView === 'online') {
+                if (tabFilterSelect) tabFilterSelect.style.display = 'none';
+                if (exclusionsButton) exclusionsButton.textContent = 'Manage Tracked Users';
+            } else {
+                if (tabFilterSelect) tabFilterSelect.style.display = 'block';
+                if (exclusionsButton) exclusionsButton.textContent = 'Manage Exclusions';
+            }
+        };
+        return tab;
+    }
+
+    var typingTab, onlineTab;
+
+    function updateTabs() {
+        tabsContainer.innerHTML = '';
+        typingTab = createTab('Typing Activity', 'typing', currentView === 'typing');
+        onlineTab = createTab('Online Tracker', 'online', currentView === 'online');
+        tabsContainer.appendChild(typingTab);
+        tabsContainer.appendChild(onlineTab);
+    }
+
+    updateTabs();
+
     // Create filter section
     var filterSection = document.createElement('div');
     filterSection.style.cssText = `
@@ -424,6 +477,8 @@ window.showWhatsAppActivityLogs = function () {
     };
 
     function showExclusionsModal() {
+        var isOnlineView = (typeof currentView !== 'undefined' && currentView === 'online');
+
         var contentElement = document.getElementById('logs-content');
         if (!contentElement) return;
 
@@ -431,6 +486,7 @@ window.showWhatsAppActivityLogs = function () {
         if (typeof filterSection !== 'undefined') filterSection.style.display = 'none';
         if (typeof statsSection !== 'undefined') statsSection.style.display = 'none';
         if (typeof footer !== 'undefined') footer.style.display = 'none';
+        if (typeof tabsContainer !== 'undefined') tabsContainer.style.display = 'none';
 
         // Clear content
         contentElement.innerHTML = '';
@@ -441,12 +497,14 @@ window.showWhatsAppActivityLogs = function () {
 
         // Header
         var title = document.createElement('h3');
-        title.textContent = 'Manage Exclusions';
+        title.textContent = isOnlineView ? 'Manage Tracked Users' : 'Manage Exclusions';
         title.style.cssText = 'color: #3b4a54; margin-bottom: 8px; margin-top: 0;';
         container.appendChild(title);
 
         var description = document.createElement('p');
-        description.textContent = 'Search for chats to exclude from typing notifications.';
+        description.textContent = isOnlineView ?
+            'Select contacts to track online/offline status (presence).' :
+            'Search for chats to exclude from typing notifications.';
         description.style.cssText = 'color: #667781; margin-bottom: 20px; font-size: 14px;';
         container.appendChild(description);
 
@@ -495,7 +553,7 @@ window.showWhatsAppActivityLogs = function () {
 
         // Exclusions List Title
         var listTitle = document.createElement('h4');
-        listTitle.textContent = 'Currently Excluded';
+        listTitle.textContent = isOnlineView ? 'Currently Tracked' : 'Currently Excluded';
         listTitle.style.cssText = 'color: #3b4a54; margin-bottom: 12px; font-size: 16px; border-bottom: 2px solid #f0f2f5; padding-bottom: 8px; margin-top: 0;';
         container.appendChild(listTitle);
 
@@ -525,6 +583,7 @@ window.showWhatsAppActivityLogs = function () {
             if (typeof filterSection !== 'undefined') filterSection.style.display = 'flex';
             if (typeof statsSection !== 'undefined') statsSection.style.display = 'flex';
             if (typeof footer !== 'undefined') footer.style.display = 'flex';
+            if (typeof tabsContainer !== 'undefined') tabsContainer.style.display = 'flex';
 
             // Reload logs
             displayLogs();
@@ -537,38 +596,92 @@ window.showWhatsAppActivityLogs = function () {
         var allChats = [];
         var loaded = false;
 
-        function loadChats() {
+        async function loadChats() {
             if (loaded) return;
             // Show loading indicator
             searchInput.placeholder = "Loading contacts...";
 
-            // Use setTimeout to allow UI to render first
-            setTimeout(function () {
-                if (window.getAllChatsSimple) {
-                    allChats = window.getAllChatsSimple();
-                    loaded = true;
-                    searchInput.placeholder = 'Search by contact name or phone number...';
-                } else if (window.loadAllChatsAndLog) {
-                    allChats = window.loadAllChatsAndLog(5000);
-                    loaded = true;
-                    searchInput.placeholder = 'Search by contact name or phone number...';
+            // Retry mechanism for WPP
+            var maxRetries = 5;
+            var retryCount = 0;
+
+            async function tryLoad() {
+                var found = false;
+
+                // 1. Try WPP (Most reliable if available)
+                if (typeof WPP !== 'undefined' && WPP.chat && WPP.chat.list) {
+                    try {
+                        var wppChats = await WPP.chat.list();
+                        if (wppChats && wppChats.length > 0) {
+                            allChats = wppChats.map(c => ({
+                                jid: c.id._serialized || c.id,
+                                name: (c.contact && (c.contact.name || c.contact.pushname)) || c.name || c.formattedTitle || c.id._serialized || c.id
+                            }));
+                            found = true;
+                            if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
+                                console.log("[Exclusions] Loaded chats via WPP:", allChats.length);
+                            }
+                        }
+                    } catch (e) { console.error("WPP chat list failed", e); }
                 }
-            }, 50);
+
+                // 2. Try internal getAllChatsSimple (if WPP failed)
+                if (!found && window.getAllChatsSimple) {
+                    try {
+                        var result = window.getAllChatsSimple();
+                        // Handle if it returned a promise (despite not being async signature)
+                        if (result && typeof result.then === 'function') {
+                            result = await result;
+                        }
+
+                        if (result && result.length > 0) {
+                            allChats = result;
+                            found = true;
+                        }
+                    } catch (e) { console.error("getAllChatsSimple failed", e); }
+                }
+
+                // 3. Fallback to older loadAllChatsAndLog
+                if (!found && window.loadAllChatsAndLog) {
+                    try {
+                        allChats = window.loadAllChatsAndLog(5000);
+                        if (allChats && allChats.length > 0) found = true;
+                    } catch (e) { console.error("loadAllChatsAndLog failed", e); }
+                }
+
+                if (found) {
+                    loaded = true;
+                    searchInput.placeholder = 'Search by contact name or phone number...';
+                } else {
+                    if (retryCount < maxRetries) {
+                        retryCount++;
+                        searchInput.placeholder = 'Loading contacts... (' + retryCount + ')';
+                        setTimeout(tryLoad, 1000); // Retry every second
+                    } else {
+                        searchInput.placeholder = 'Could not load chat list. You can still search by JID.';
+                        allChats = [];
+                        loaded = true;
+                    }
+                }
+            }
+
+            // Start loading
+            tryLoad();
         }
 
         function renderExclusions() {
-            var exclusions = window.getTypingExclusions();
+            var items = isOnlineView ? window.OnlineTracker.getTrackedUsers() : window.getTypingExclusions();
             listContainer.innerHTML = '';
 
-            if (exclusions.length === 0) {
+            if (items.length === 0) {
                 var empty = document.createElement('div');
-                empty.textContent = 'No chats excluded yet.';
+                empty.textContent = isOnlineView ? 'No contacts tracked yet.' : 'No chats excluded yet.';
                 empty.style.cssText = 'color: #8696a0; font-style: italic; padding: 10px 0;';
                 listContainer.appendChild(empty);
                 return;
             }
 
-            exclusions.forEach(function (jid) {
+            items.forEach(function (jid) {
                 var item = document.createElement('div');
                 item.style.cssText = 'border-bottom: 1px solid #e0e0e0; padding: 12px 0; display: flex; justify-content: space-between; align-items: center;';
 
@@ -601,7 +714,7 @@ window.showWhatsAppActivityLogs = function () {
                 }
 
                 var removeBtn = document.createElement('button');
-                removeBtn.textContent = 'Remove';
+                removeBtn.textContent = isOnlineView ? 'Stop Tracking' : 'Remove';
                 removeBtn.style.cssText = `
                     background-color: #dc3545;
                     color: white;
@@ -612,7 +725,11 @@ window.showWhatsAppActivityLogs = function () {
                     font-size: 12px;
                 `;
                 removeBtn.onclick = function () {
-                    window.toggleTypingExclusion(jid);
+                    if (isOnlineView) {
+                        window.OnlineTracker.removeTrackedUser(jid);
+                    } else {
+                        window.toggleTypingExclusion(jid);
+                    }
                     renderExclusions();
                 };
 
@@ -635,11 +752,11 @@ window.showWhatsAppActivityLogs = function () {
                 return;
             }
 
-            // Exclude already excluded items from suggestions
-            var currentExclusions = new Set(window.getTypingExclusions());
+            // Exclude already added items from suggestions
+            var currentItems = new Set(isOnlineView ? window.OnlineTracker.getTrackedUsers() : window.getTypingExclusions());
 
             var matches = allChats.filter(function (chat) {
-                if (currentExclusions.has(chat.jid)) return false;
+                if (currentItems.has(chat.jid)) return false;
 
                 var nameMatch = chat.name && chat.name.toLowerCase().includes(query);
                 var jidMatch = chat.jid && chat.jid.toLowerCase().includes(query);
@@ -668,7 +785,11 @@ window.showWhatsAppActivityLogs = function () {
                     li.appendChild(jidDiv);
 
                     li.onclick = function () {
-                        window.toggleTypingExclusion(chat.jid);
+                        if (isOnlineView) {
+                            window.OnlineTracker.addTrackedUser(chat.jid);
+                        } else {
+                            window.toggleTypingExclusion(chat.jid);
+                        }
                         searchInput.value = '';
                         suggestionsBox.style.display = 'none';
                         renderExclusions();
@@ -695,6 +816,7 @@ window.showWhatsAppActivityLogs = function () {
 
     // Assemble modal
     modalContent.appendChild(header);
+    modalContent.appendChild(tabsContainer);
     modalContent.appendChild(filterSection);
     modalContent.appendChild(statsSection);
     modalContent.appendChild(content);
@@ -705,50 +827,87 @@ window.showWhatsAppActivityLogs = function () {
     document.body.appendChild(modal);
 
     // Function to update stats
+    // Function to update stats
     function updateStats() {
-        window.getWhatsAppActivityLogStats(function (stats) {
+        if (currentView === 'online') {
+            // Online Stats
+            var logs = window.OnlineTracker.getLogs();
+            var totalLogs = logs.length;
+            var uniqueUsers = new Set(logs.map(l => l.jid)).size;
+            var gapCount = logs.filter(l => l.status === 'gap').length;
+
             var statsElement = document.getElementById('logs-stats');
             if (statsElement) {
                 statsElement.innerHTML = `
                     <div style="display: flex; align-items: center;">
-                        <div style="background-color: #008069; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">${stats.totalLogs}</div>
+                        <div style="background-color: #008069; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">${totalLogs}</div>
                         <div>
-                            <div style="font-weight: 600; color: #3b4a54;">Total Logs</div>
-                            <div style="font-size: 12px; color: #667781;">Activity events</div>
+                            <div style="font-weight: 600; color: #3b4a54;">Total Events</div>
+                            <div style="font-size: 12px; color: #667781;">Online/Offline logs</div>
                         </div>
                     </div>
                     <div style="display: flex; align-items: center;">
-                        <div style="background-color: #54656f; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">${stats.uniqueUsers}</div>
+                        <div style="background-color: #54656f; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">${uniqueUsers}</div>
                         <div>
-                            <div style="font-weight: 600; color: #3b4a54;">Unique Users</div>
-                            <div style="font-size: 12px; color: #667781;">Different contacts</div>
+                            <div style="font-weight: 600; color: #3b4a54;">Tracked Users</div>
+                            <div style="font-size: 12px; color: #667781;">Active in logs</div>
                         </div>
                     </div>
                     <div style="display: flex; align-items: center;">
-                        <div style="background-color: #28a745; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">${stats.onTabCount}</div>
+                        <div style="background-color: #dc3545; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">${gapCount}</div>
                         <div>
-                            <div style="font-weight: 600; color: #3b4a54;">On Tab</div>
-                            <div style="font-size: 12px; color: #667781;">Active window</div>
+                            <div style="font-weight: 600; color: #3b4a54;">Gaps</div>
+                            <div style="font-size: 12px; color: #667781;">Tracking interruptions</div>
                         </div>
                     </div>
-                    <div style="display: flex; align-items: center;">
-                        <div style="background-color: #ffc107; color: black; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">${stats.offTabCount}</div>
-                        <div>
-                            <div style="font-weight: 600; color: #3b4a54;">Off Tab</div>
-                            <div style="font-size: 12px; color: #667781;">Background</div>
-                        </div>
-                    </div>
-                    ${stats.mostActiveUser ? `
-                    <div style="display: flex; align-items: center;">
-                        <div style="background-color: #1982c4; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">★</div>
-                        <div>
-                            <div style="font-weight: 600; color: #3b4a54;">${stats.mostActiveUser}</div>
-                            <div style="font-size: 12px; color: #667781;">${stats.mostActiveUserCount} events</div>
-                        </div>
-                    </div>` : ''}
                 `;
             }
-        });
+        } else {
+            // Typing Stats (Existing logic)
+            window.getWhatsAppActivityLogStats(function (stats) {
+                var statsElement = document.getElementById('logs-stats');
+                if (statsElement) {
+                    statsElement.innerHTML = `
+                        <div style="display: flex; align-items: center;">
+                            <div style="background-color: #008069; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">${stats.totalLogs}</div>
+                            <div>
+                                <div style="font-weight: 600; color: #3b4a54;">Total Logs</div>
+                                <div style="font-size: 12px; color: #667781;">Activity events</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center;">
+                            <div style="background-color: #54656f; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">${stats.uniqueUsers}</div>
+                            <div>
+                                <div style="font-weight: 600; color: #3b4a54;">Unique Users</div>
+                                <div style="font-size: 12px; color: #667781;">Different contacts</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center;">
+                            <div style="background-color: #28a745; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">${stats.onTabCount}</div>
+                            <div>
+                                <div style="font-weight: 600; color: #3b4a54;">On Tab</div>
+                                <div style="font-size: 12px; color: #667781;">Active window</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center;">
+                            <div style="background-color: #ffc107; color: black; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">${stats.offTabCount}</div>
+                            <div>
+                                <div style="font-weight: 600; color: #3b4a54;">Off Tab</div>
+                                <div style="font-size: 12px; color: #667781;">Background</div>
+                            </div>
+                        </div>
+                        ${stats.mostActiveUser ? `
+                        <div style="display: flex; align-items: center;">
+                            <div style="background-color: #1982c4; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; font-weight: bold;">★</div>
+                            <div>
+                                <div style="font-weight: 600; color: #3b4a54;">${stats.mostActiveUser}</div>
+                                <div style="font-size: 12px; color: #667781;">${stats.mostActiveUserCount} events</div>
+                            </div>
+                        </div>` : ''}
+                    `;
+                }
+            });
+        }
     }
 
     // Function to display logs
@@ -765,6 +924,63 @@ window.showWhatsAppActivityLogs = function () {
                 </div>
             `;
 
+            if (currentView === 'online') {
+                // Use a small timeout to allow UI to render spinner
+                setTimeout(function () {
+                    var logs = window.OnlineTracker.getLogs();
+                    if (filters.userName) {
+                        logs = logs.filter(l => (l.userName || l.jid).toLowerCase().includes(filters.userName.toLowerCase()));
+                    }
+                    logs.sort((a, b) => b.timestamp - a.timestamp);
+
+                    if (!logs || logs.length === 0) {
+                        contentElement.innerHTML = `
+                            <div style="display: flex; justify-content: center; align-items: center; height: 200px;">
+                                <div style="text-align: center; color: #667781;">
+                                    <h3 style="margin: 0 0 8px; font-weight: 500; color: #54656f;">No Online Activity</h3>
+                                    <p style="margin: 0; font-size: 14px;">No presence events recorded matching your filters.</p>
+                                </div>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    var html = '<div style="padding: 16px 0;">';
+                    logs.forEach(function (log) {
+                        var date = new Date(log.timestamp);
+                        var timeStr = date.toLocaleString();
+                        var statusColor = log.status === 'online' ? '#28a745' : ((log.status === 'offline' || log.status === 'unavailable') ? '#6c757d' : '#dc3545');
+                        var statusText = log.status.toUpperCase();
+
+                        var gapText = '';
+                        if (log.metadata) {
+                            gapText = `<span style="font-size: 12px; color: #d63384; margin-left: 8px;">(Gap: ${Math.round(log.metadata / 1000)}s)</span>`;
+                        } else if (log.status === 'gap') {
+                            statusColor = '#dc3545';
+                        }
+
+                        html += `
+                           <div style="border-bottom: 1px solid #e0e0e0; padding: 12px 0;">
+                               <div style="display: flex; justify-content: space-between;">
+                                    <div>
+                                        <div style="font-weight: 600; font-size: 16px; color: #3b4a54;">${log.userName || log.jid} <span style="font-size: 12px; color: #888; font-weight: 400;">${log.userName ? log.jid : ''}</span></div>
+                                        <div style="margin-top: 4px;">
+                                           <span style="background-color: ${statusColor}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px;">${statusText}</span>
+                                           <span style="font-size: 12px; color: #666; margin-left: 8px;">${timeStr}</span>
+                                           ${gapText}
+                                        </div>
+                                    </div>
+                               </div>
+                           </div>
+                        `;
+                    });
+                    html += '</div>';
+                    contentElement.innerHTML = html;
+                }, 10);
+                return;
+            }
+
+            // Typing Logs Logic
             window.getWhatsAppActivityLogsWithFilters(filters, function (logs) {
                 if (contentElement) {
                     if (logs && logs.length > 0) {
@@ -821,7 +1037,6 @@ window.showWhatsAppActivityLogs = function () {
                             `;
                         });
 
-                        html += '</div>';
                         html += '</div>';
                         contentElement.innerHTML = html;
 
@@ -1027,6 +1242,16 @@ wsHook.after = function (messageEvent, url) {
                         console.error("Error processing typing notification:", error);
                         // Continue processing even if typing notification fails
                     }
+                }
+
+                // Check for online presence updates
+                try {
+                    if (realNode.tag === "presence") {
+                        console.warn("[Interception] DEBUG: Intercepted presence node", realNode.attrs ? realNode.attrs.from : "unknown");
+                    }
+                    await checkForOnlinePresence(realNode);
+                } catch (error) {
+                    console.error("Error processing presence update:", error);
                 }
 
                 var [isAllowed, manipulatedNode] = await NodeHandler.interceptReceivedNode(realNode);
@@ -2953,70 +3178,33 @@ function playBeepSound() {
 }
 
 // Stay Online functionality
-var stayOnlineInterval = null;
-
-function startStayOnline() {
-    // Listen for options updates
-    document.addEventListener('onOptionsUpdate', function (e) {
+// Listen for options updates to toggle stay online
+document.addEventListener('onOptionsUpdate', function (e) {
+    try {
         var options = JSON.parse(e.detail);
         if ('stayOnline' in options) {
-            stayOnlineEnabled = options.stayOnline;
+            var isEnabled = options.stayOnline;
 
-            if (stayOnlineEnabled) {
-                // Start sending periodic presence updates
-                startPresenceUpdates();
-            } else {
-                // Stop sending periodic presence updates
-                stopPresenceUpdates();
+            // Delegate to online_tracker.js functions
+            if (typeof window.startStayOnline === 'function' && typeof window.stopPresenceUpdates === 'function') {
+                if (isEnabled) {
+                    window.startStayOnline();
+                } else {
+                    window.stopPresenceUpdates();
+                }
             }
         }
-    });
-
-    // Initial check
-    if (stayOnlineEnabled) {
-        startPresenceUpdates();
+    } catch (e) {
+        console.error("Error handling stay online option update:", e);
     }
+});
+
+// Initial check is handled when options are first loaded/injected
+if (typeof stayOnlineEnabled !== 'undefined' && stayOnlineEnabled && typeof window.startStayOnline === 'function') {
+    window.startStayOnline();
 }
 
-function startPresenceUpdates() {
-    // Clear any existing interval
-    if (stayOnlineInterval) {
-        clearInterval(stayOnlineInterval);
-    }
-
-    // Send initial presence update
-    sendPresenceUpdate();
-
-    // Send presence updates every 15 seconds
-    stayOnlineInterval = setInterval(function () {
-        sendPresenceUpdate();
-    }, 15000);
-}
-
-function stopPresenceUpdates() {
-    if (stayOnlineInterval) {
-        clearInterval(stayOnlineInterval);
-        stayOnlineInterval = null;
-    }
-}
-
-function sendPresenceUpdate() {
-    try {
-        // Make sure WhatsApp API is available
-        if (window.WhatsAppAPI && window.WhatsAppAPI.sendPresenceStatusProtocol) {
-            // Send available presence status
-            window.WhatsAppAPI.sendPresenceStatusProtocol({ name: "", status: "available" });
-
-            if (WAdebugMode) {
-                console.log("[Stay Online] Sent presence update");
-            }
-        } else {
-            console.warn("[Stay Online] WhatsApp API not available for presence updates");
-        }
-    } catch (error) {
-        console.error("[Stay Online] Error sending presence update:", error);
-    }
-}
+// Stay Online logic moved to core/online_tracker.js
 
 // Test function to demonstrate UI functionality
 window.testWhatsAppActivityUI = function () {
@@ -3043,6 +3231,28 @@ window.testLoadAllChats = function (limit) {
 
     return chats;
 };
+
+// -----------------------------------------------------------------------------
+// Online Presence Tracking Logic
+// -----------------------------------------------------------------------------
+
+var onlineTrackerEnabled = true;
+
+// Online presence tracking logic is now handled in core/online_tracker.js
+// which exposes window.checkForOnlinePresence
+
+// Online Tracker UI listener
+
+// Event listener to open Online Tracker UI
+document.addEventListener('onShowOnlineTracker', function () {
+    if (typeof window.showWhatsAppActivityLogs === 'function') {
+        window.showWhatsAppActivityLogs();
+        // Switch to Online Tracker tab if I implement tabs later
+        // or I can implement showOnlineTrackerUI() separately.
+        // For now, the requirements say "UI to view tracked activity".
+        // I'll update showWhatsAppActivityLogs to show the tracker info or add a button there.
+    }
+});
 
 // Log that interception.js has finished loading
 console.log('[WAIncognito] interception.js loaded and functions exposed to window object');

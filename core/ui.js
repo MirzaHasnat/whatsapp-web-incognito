@@ -1,10 +1,9 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿/*
+﻿﻿/*
 This is a content script responsible for some UI.
 */
 
-if (chrome != undefined) 
-{
-	var browser = chrome;
+if (chrome != undefined) {
+    var browser = chrome;
 }
 
 initialize();
@@ -14,15 +13,13 @@ var isUIClassesWorking = true;
 var deletedMessagesDB = null;
 var pseudoMsgsIDs = new Set();
 
-function initialize()
-{
+function initialize() {
     // load saved settings
-    browser.runtime.sendMessage({ name: "getOptions" }, function (options)
-    {
+    browser.runtime.sendMessage({ name: "getOptions" }, function (options) {
         document.dispatchEvent(new CustomEvent('onOptionsUpdate',
-        {
-            detail: JSON.stringify(options)
-        }));
+            {
+                detail: JSON.stringify(options)
+            }));
 
         // ratify it
         var optionsMessage = options;
@@ -32,23 +29,18 @@ function initialize()
 
     // initialize mutation observer
     var appElem = document.getElementsByTagName("body")[0];
-    if (appElem != undefined)
-    {
-        var mutationObserver = new MutationObserver(function (mutations)
-        {
+    if (appElem != undefined) {
+        var mutationObserver = new MutationObserver(function (mutations) {
             var found = false;
-            for (var i = 0; i < mutations.length; i++)
-            {
+            for (var i = 0; i < mutations.length; i++) {
                 var addedNodes = mutations[i].addedNodes;
                 var removedNodes = mutations[i].removedNodes;
 
-                for (var j = 0; j < addedNodes.length; j++)
-                {
+                for (var j = 0; j < addedNodes.length; j++) {
                     var addedNode = addedNodes[j];
                     if (addedNode.classList == undefined) continue;
 
-                    if (addedNode.getElementsByClassName("two").length > 0)
-                    {
+                    if (addedNode.getElementsByClassName("two").length > 0) {
                         // main app was added, UI is ready
                         addIconIfNeeded();
                         setTimeout(function () { onMainUIReady(); }, 100);
@@ -56,10 +48,8 @@ function initialize()
                         found = true;
                         break;
                     }
-                    else if (addedNode.nodeName.toLowerCase() == "div" && addedNode.classList.contains(UIClassNames.OUTER_DROPDOWN_CLASS))
-                    {
-                        setTimeout(function ()
-                        {
+                    else if (addedNode.nodeName.toLowerCase() == "div" && addedNode.classList.contains(UIClassNames.OUTER_DROPDOWN_CLASS)) {
+                        setTimeout(function () {
                             document.dispatchEvent(new CustomEvent('onDropdownOpened', {}));
 
                         }, 200);
@@ -67,20 +57,17 @@ function initialize()
 
                     var msgNodes = addedNode.querySelectorAll("div.message-in, div.message-out");
                     // Scan for messages and modify if needed
-                    
-                    for (let i = 0; i < msgNodes.length; i++)
-                    {
+
+                    for (let i = 0; i < msgNodes.length; i++) {
                         const currentNode = msgNodes[i];
                         onNewMessageNodeAdded(currentNode);
                     }
                 }
-                
-                for (var j = 0; j < removedNodes.length; j++)
-                {
+
+                for (var j = 0; j < removedNodes.length; j++) {
                     var removedNode = removedNodes[j];
                     if (removedNode.classList == undefined) continue;
-                    if (removedNode.classList.contains("two"))
-                    {
+                    if (removedNode.classList.contains("two")) {
                         // main app was removed, remove our artifacts
                         var menuItem = document.getElementsByClassName("menu-item-incognito")[0];
                         var dropItem = document.getElementsByClassName("drop")[0];
@@ -102,8 +89,7 @@ function initialize()
 
 }
 
-function onMainUIReady()
-{
+function onMainUIReady() {
     document.dispatchEvent(new CustomEvent('onMainUIReady', {}));
 
     setTimeout(checkInterception, 1000);
@@ -113,44 +99,39 @@ function onMainUIReady()
     setTimeout(addIconIfNeeded, 1000);
 }
 
-async function addIconIfNeeded()
-{
+async function addIconIfNeeded() {
     if (document.getElementsByClassName("menu-item-incognito").length > 0) return; // already added
     updateUIClassNamesIfNeeded();
 
     var firstMenuItem = document.getElementsByClassName(UIClassNames.MENU_ITEM_CLASS)[0];
-    if (firstMenuItem != undefined)
-    {
+    if (firstMenuItem != undefined) {
         var menuItemElem = await generateSVGElement(chrome.runtime.getURL("images/incognito_gray_24_hollow_9.svg"), UIClassNames.MENU_ITEM_INNER_CLASS, "Incognito Options", 24, "button");
         menuItemElem.setAttribute("class", UIClassNames.MENU_ITEM_CLASS + " menu-item-incognito");
 
         firstMenuItem.parentElement.insertBefore(menuItemElem, firstMenuItem);
 
-        browser.runtime.sendMessage({ name: "getOptions" }, function (options)
-        {
+        browser.runtime.sendMessage({ name: "getOptions" }, function (options) {
             document.dispatchEvent(new CustomEvent('onOptionsUpdate', { detail: JSON.stringify(options) }));
 
             var dropContent = generateDropContent(options);
             var drop = new Drop(
-            {
-                target: menuItemElem,
-                content: dropContent,
-                position: "bottom left",
-                classes: "drop-theme-incognito",
-                openOn: "click",
-                tetherOptions:
                 {
-                    offset: "-4px -4px 0 0"
-                },
-            });
+                    target: menuItemElem,
+                    content: dropContent,
+                    position: "bottom left",
+                    classes: "drop-theme-incognito",
+                    openOn: "click",
+                    tetherOptions:
+                    {
+                        offset: "-4px -4px 0 0"
+                    },
+                });
             var originalCloseFunction = drop.close;
-            drop.close = function ()
-            {
+            drop.close = function () {
                 document.dispatchEvent(new CustomEvent('onIncognitoOptionsClosed', { detail: null }));
                 setTimeout(function () { originalCloseFunction.apply(drop, arguments); }, 100);
             }
-            drop.on("open", function ()
-            {
+            drop.on("open", function () {
                 if (!checkInterception()) return;
                 var pressedMenuItemClass = UIClassNames.MENU_ITEM_CLASS + " " + UIClassNames.MENU_ITEM_HIGHLIGHTED_CLASS + " active menu-item-incognito";
                 document.getElementsByClassName("menu-item-incognito")[0].setAttribute("class", pressedMenuItemClass);
@@ -164,15 +145,14 @@ async function addIconIfNeeded()
                 document.getElementById("incognito-option-status-downloading").addEventListener("click", onStatusDownloadingTick);
                 document.getElementById("incognito-option-typing-notifications").addEventListener("click", onTypingNotificationsTick);
                 document.getElementById("incognito-option-stay-online").addEventListener("click", onStayOnlineTick);
-                for (var nextButton of document.getElementsByClassName('incognito-next-button'))
-                {
+                document.getElementById("incognito-option-online-tracker").addEventListener("click", onOnlineTrackerClick);
+                for (var nextButton of document.getElementsByClassName('incognito-next-button')) {
                     nextButton.addEventListener("click", onNextButtonClicked);
                 };
-                for (var nextButton of document.getElementsByClassName('incognito-back-button'))
-                {
+                for (var nextButton of document.getElementsByClassName('incognito-back-button')) {
                     nextButton.addEventListener("click", onBackButtonClicked);
                 };
-                
+
                 //document.getElementById("incognito-option-safety-delay").addEventListener("input", onSafetyDelayChanged);
                 //document.getElementById("incognito-option-safety-delay").addEventListener("keypress", isNumberKey);
                 //document.getElementById("incognito-radio-enable-safety-delay").addEventListener("click", onSafetyDelayEnabled);
@@ -180,8 +160,7 @@ async function addIconIfNeeded()
 
                 document.dispatchEvent(new CustomEvent('onIncognitoOptionsOpened', { detail: null }));
             });
-            drop.on("close", function ()
-            {
+            drop.on("close", function () {
                 document.getElementsByClassName("menu-item-incognito")[0].setAttribute("class", UIClassNames.MENU_ITEM_CLASS + " menu-item-incognito");
 
                 document.getElementById("incognito-option-read-confirmations").removeEventListener("click", onReadConfirmaionsTick);
@@ -189,13 +168,12 @@ async function addIconIfNeeded()
                 document.getElementById("incognito-option-typing-status").removeEventListener("click", onTypingUpdatesTick);
                 document.getElementById("incognito-option-typing-notifications").removeEventListener("click", onTypingNotificationsTick);
                 document.getElementById("incognito-option-stay-online").removeEventListener("click", onStayOnlineTick);
+                document.getElementById("incognito-option-online-tracker").removeEventListener("click", onOnlineTrackerClick);
 
-                for (var nextButton of document.getElementsByClassName('incognito-next-button'))
-                {
+                for (var nextButton of document.getElementsByClassName('incognito-next-button')) {
                     nextButton.removeEventListener("click", onNextButtonClicked);
                 };
-                for (var nextButton of document.getElementsByClassName('incognito-back-button'))
-                {
+                for (var nextButton of document.getElementsByClassName('incognito-back-button')) {
                     nextButton.removeEventListener("click", onBackButtonClicked);
                 };
 
@@ -204,8 +182,7 @@ async function addIconIfNeeded()
             });
         });
     }
-    else if (isUIClassesWorking)
-    {
+    else if (isUIClassesWorking) {
         isUIClassesWorking = false;
         Swal.fire({
             title: "WAIncognito is temporarily broken",
@@ -219,8 +196,7 @@ async function addIconIfNeeded()
     }
 }
 
-function generateDropContent(options)
-{
+function generateDropContent(options) {
     var onlineStatusTitle = "Hide \"online\" status";
     var onlineStatusCaption = "Stops sending presence updates. Will prevent you from seeing others' online status.";
 
@@ -248,6 +224,9 @@ function generateDropContent(options)
 
     var allowStatusDownloadTitle = "Allow status downloading";
     var allowStatusDownloadCaption = "Adds a button to download statuses";
+
+    var onlineTrackerTitle = "Online Tracker Logs";
+    var onlineTrackerCaption = "View online/offline history.";
 
     var readConfirmationCheckbox = (options.readConfirmationsHook ? "checked incognito-checked'> \
         <div class='checkmark incognito-mark incognito-marked'> </div>" :
@@ -376,11 +355,36 @@ function generateDropContent(options)
                         </div>
                         <div id='incognito-option-stay-online' class='incognito-options-item' style='cursor: pointer;'>
                             <div class='checkbox-container-incognito' style=''>
-                                <div class='checkbox checkbox checkbox-incognito ${stayOnlineCheckbox}
+                                <div class='checkbox checkbox-incognito ${stayOnlineCheckbox}'> 
+                                    <div class='checkmark incognito-mark'> </div>
                                 </div>
                             </div>
-                            ${stayOnlineTitle}
-                            <div class='incognito-options-description'>${stayOnlineCaption}</div>
+                            <div style='display: inline-block'>
+                                ${stayOnlineTitle}
+                                <div class='incognito-options-description'>${stayOnlineCaption}</div>
+                            </div>
+                        </div>
+                        
+                        <br>
+                        <button class='incognito-next-button'>Next &gt</button>
+                        <button class='incognito-back-button'>&lt Back</button>
+                    </div>
+                </div>
+
+                <div class='incognito-options-view-container' style='transform: translate(300%, 0%);' id='incognito-options-view4'>
+
+                    <!---- Fourth Page ---!>
+                    <div class='incognito-options-view' id='incognito-options-view-internal4'>
+                         <div id='incognito-option-online-tracker' class='incognito-options-item' style='cursor: pointer;'>
+                            <div class='checkbox-container-incognito' style=''>
+                                <div class='checkbox checkbox-incognito unchecked'> 
+                                    <div class='checkmark incognito-mark'> </div>
+                                </div>
+                            </div>
+                            <div style='display: inline-block'>
+                                ${onlineTrackerTitle}
+                                <div class='incognito-options-description'>${onlineTrackerCaption}</div>
+                            </div>
                         </div>
                         <button class='incognito-back-button'>&lt Back</button>
                     </div>
@@ -394,19 +398,15 @@ function generateDropContent(options)
     return dropContent;
 }
 
-document.addEventListener('onMarkAsReadClick', function (e)
-{
+document.addEventListener('onMarkAsReadClick', function (e) {
     var data = JSON.parse(e.detail);
-    browser.runtime.sendMessage({ name: "getOptions" }, function (options)
-    {
-        if (options.readConfirmationsHook)
-        {
-            if (options.showReadWarning)
-            {
+    browser.runtime.sendMessage({ name: "getOptions" }, function (options) {
+        if (options.readConfirmationsHook) {
+            if (options.showReadWarning) {
                 Swal.fire({
                     title: "Mark as read?",
-                    text: data.formattedName + " will be able to tell you read the last " + 
-                            (data.unreadCount > 1 ? data.unreadCount + " messages." : " message."),
+                    text: data.formattedName + " will be able to tell you read the last " +
+                        (data.unreadCount > 1 ? data.unreadCount + " messages." : " message."),
                     input: 'checkbox',
                     inputValue: 0,
                     inputPlaceholder: "Don't show this warning again",
@@ -414,10 +414,8 @@ document.addEventListener('onMarkAsReadClick', function (e)
                     showCancelButton: true,
                     confirmButtonColor: "#DD6B55",
                     confirmButtonText: "Yes, send receipt",
-                }).then(result =>
-                {
-                    if (result.isConfirmed)
-                    {
+                }).then(result => {
+                    if (result.isConfirmed) {
                         document.dispatchEvent(new CustomEvent('sendReadConfirmation', { detail: JSON.stringify(data) }));
                         //swal("Sent!", "Messages were marked as read", "success");
 
@@ -427,8 +425,7 @@ document.addEventListener('onMarkAsReadClick', function (e)
                     }
                 });
             }
-            else
-            {
+            else {
                 // just send it withoung warning
                 document.dispatchEvent(new CustomEvent('sendReadConfirmation', { detail: JSON.stringify(data) }));
             }
@@ -436,24 +433,20 @@ document.addEventListener('onMarkAsReadClick', function (e)
     });
 });
 
-document.addEventListener('onInterceptionWorking', function (e)
-{
+document.addEventListener('onInterceptionWorking', function (e) {
     var data = JSON.parse(e.detail);
     isInterceptionWorking = data.isInterceptionWorking;
 
     // populate pseudoMsgsIDs
     var deletedDBOpenRequest = indexedDB.open("deletedMsgs", 1);
-    deletedDBOpenRequest.onsuccess = () => 
-    {
+    deletedDBOpenRequest.onsuccess = () => {
         var deletedMsgsDB = deletedDBOpenRequest.result;
         var keys = deletedMsgsDB.transaction('msgs', "readonly").objectStore("msgs").getAll();
         keys.onsuccess = () => {
-            keys.result.forEach((value) => 
-            {
+            keys.result.forEach((value) => {
                 pseudoMsgsIDs.add(value.originalID);
             });
-            document.addEventListener("pseudoMsgs", (e) => 
-            {
+            document.addEventListener("pseudoMsgs", (e) => {
                 pseudoMsgsIDs.add(e.detail);
             });
         };
@@ -461,18 +454,16 @@ document.addEventListener('onInterceptionWorking', function (e)
     };
 });
 
-function getTheme() 
-{
+function getTheme() {
     // light/dark mode detection
-    if (localStorage["theme"] != "null" && localStorage["theme"] != undefined) 
+    if (localStorage["theme"] != "null" && localStorage["theme"] != undefined)
         return localStorage["theme"]
-    else 
-    {
+    else {
         // this is if there is no theme selected by default (null)
-        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches || 
-            document.getElementsByClassName("web")[0].classList.contains("dark")) 
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ||
+            document.getElementsByClassName("web")[0].classList.contains("dark"))
             return "\"dark\"";
-        else 
+        else
             return "\"light\"";
     }
 }
@@ -481,271 +472,239 @@ function getTheme()
 // Drop handlers
 //
 
-function onReadConfirmaionsTick()
-{
+function onReadConfirmaionsTick() {
     var readConfirmationsHook = false;
     var checkbox = document.querySelector("#incognito-option-read-confirmations .checkbox-incognito");
-    
+
     var checkmark = checkbox.firstElementChild;
-    
-    if (checkbox.getAttribute("class").indexOf("unchecked") > -1)
-    {
+
+    if (checkbox.getAttribute("class").indexOf("unchecked") > -1) {
         tickCheckbox(checkbox, checkmark);
         readConfirmationsHook = true;
     }
-    else
-    {
+    else {
         untickCheckbox(checkbox, checkmark);
 
         readConfirmationsHook = false;
         var redChats = document.getElementsByClassName("icon-meta unread-count incognito");
-        for (var i = 0; i < redChats.length; i++)
-        {
+        for (var i = 0; i < redChats.length; i++) {
             redChats[i].className = 'icon-meta unread-count';
         }
     }
     browser.runtime.sendMessage({ name: "setOptions", readConfirmationsHook: readConfirmationsHook });
     document.dispatchEvent(new CustomEvent('onOptionsUpdate',
-    {
-        detail: JSON.stringify({ readConfirmationsHook: readConfirmationsHook })
-    }));
+        {
+            detail: JSON.stringify({ readConfirmationsHook: readConfirmationsHook })
+        }));
 }
 
-function onOnlineUpdatesTick()
-{
+function onOnlineUpdatesTick() {
     var onlineUpdatesHook = false;
     var checkbox = document.querySelector("#incognito-option-online-status .checkbox-incognito");
     var checkboxClass = checkbox.getAttribute("class");
     var checkmark = checkbox.firstElementChild;
     var chekmarkClass = checkmark.getAttribute("class");
-    if (checkboxClass.indexOf("unchecked") > -1)
-    {
+    if (checkboxClass.indexOf("unchecked") > -1) {
         tickCheckbox(checkbox, checkmark);
         onlineUpdatesHook = true;
         document.dispatchEvent(new CustomEvent('onPresenceOptionTicked'));
     }
-    else
-    {
+    else {
         untickCheckbox(checkbox, checkmark);
         onlineUpdatesHook = false;
         document.dispatchEvent(new CustomEvent('onPresenceOptionUnticked'));
     }
     browser.runtime.sendMessage({ name: "setOptions", onlineUpdatesHook: onlineUpdatesHook });
     document.dispatchEvent(new CustomEvent('onOptionsUpdate',
-    {
-        detail: JSON.stringify({ onlineUpdatesHook: onlineUpdatesHook })
-    }));
+        {
+            detail: JSON.stringify({ onlineUpdatesHook: onlineUpdatesHook })
+        }));
 }
 
-function onTypingUpdatesTick()
-{
+function onTypingUpdatesTick() {
     var typingUpdatesHook = false;
     var checkbox = document.querySelector("#incognito-option-typing-status .checkbox-incognito");
     var checkboxClass = checkbox.getAttribute("class");
     var checkmark = checkbox.firstElementChild;
     var chekmarkClass = checkmark.getAttribute("class");
-    if (checkboxClass.indexOf("unchecked") > -1)
-    {
+    if (checkboxClass.indexOf("unchecked") > -1) {
         tickCheckbox(checkbox, checkmark);
         typingUpdatesHook = true;
     }
-    else
-    {
+    else {
         untickCheckbox(checkbox, checkmark);
         typingUpdatesHook = false;
     }
     browser.runtime.sendMessage({ name: "setOptions", typingUpdatesHook: typingUpdatesHook });
     document.dispatchEvent(new CustomEvent('onOptionsUpdate',
-    {
-        detail: JSON.stringify({ typingUpdatesHook: typingUpdatesHook })
-    }));
+        {
+            detail: JSON.stringify({ typingUpdatesHook: typingUpdatesHook })
+        }));
 }
 
-function onSaveDeletedMsgsTick()
-{
+function onSaveDeletedMsgsTick() {
     var saveDeletedMsgsHook = false;
     var checkbox = document.querySelector("#incognito-option-save-deleted-msgs .checkbox-incognito");
     var checkboxClass = checkbox.getAttribute("class");
     var checkmark = checkbox.firstElementChild;
     var chekmarkClass = checkmark.getAttribute("class");
-    if (checkboxClass.indexOf("unchecked") > -1)
-    {
+    if (checkboxClass.indexOf("unchecked") > -1) {
         tickCheckbox(checkbox, checkmark);
         saveDeletedMsgsHook = true;
     }
-    else
-    {
+    else {
         untickCheckbox(checkbox, checkmark);
         saveDeletedMsgsHook = false;
     }
     browser.runtime.sendMessage({ name: "setOptions", saveDeletedMsgs: saveDeletedMsgsHook });
     document.dispatchEvent(new CustomEvent('onOptionsUpdate',
-    {
-        detail: JSON.stringify({ saveDeletedMsgs: saveDeletedMsgsHook })
-    }));
+        {
+            detail: JSON.stringify({ saveDeletedMsgs: saveDeletedMsgsHook })
+        }));
 }
 
-function onShowDeviceTypesTick()
-{
+function onOnlineTrackerClick() {
+    document.dispatchEvent(new CustomEvent('onShowOnlineTracker'));
+}
+
+function onShowDeviceTypesTick() {
     var showDeviceTypes = false;
     var checkbox = document.querySelector("#incognito-option-show-device-type .checkbox-incognito");
-    
+
     var checkmark = checkbox.firstElementChild;
-    
-    if (checkbox.getAttribute("class").indexOf("unchecked") > -1)
-    {
+
+    if (checkbox.getAttribute("class").indexOf("unchecked") > -1) {
         tickCheckbox(checkbox, checkmark);
         showDeviceTypes = true;
     }
-    else
-    {
+    else {
         untickCheckbox(checkbox, checkmark);
-        
+
         showDeviceTypes = false;
     }
     browser.runtime.sendMessage({ name: "setOptions", showDeviceTypes: showDeviceTypes });
     document.dispatchEvent(new CustomEvent('onOptionsUpdate',
-    {
-        detail: JSON.stringify({ showDeviceTypes: showDeviceTypes })
-    }));
+        {
+            detail: JSON.stringify({ showDeviceTypes: showDeviceTypes })
+        }));
 }
 
-function onAutoReceiptsTick()
-{
+function onAutoReceiptsTick() {
     var autoReceipts = false;
     var checkbox = document.querySelector("#incognito-option-auto-receipt .checkbox-incognito");
-    
+
     var checkmark = checkbox.firstElementChild;
-    
-    if (checkbox.getAttribute("class").indexOf("unchecked") > -1)
-    {
+
+    if (checkbox.getAttribute("class").indexOf("unchecked") > -1) {
         tickCheckbox(checkbox, checkmark);
         autoReceipts = true;
     }
-    else
-    {
+    else {
         untickCheckbox(checkbox, checkmark);
-        
+
         autoReceipts = false;
     }
     browser.runtime.sendMessage({ name: "setOptions", autoReceiptOnReplay: autoReceipts });
     document.dispatchEvent(new CustomEvent('onOptionsUpdate',
-    {
-        detail: JSON.stringify({ autoReceiptOnReplay: autoReceipts })
-    }));
+        {
+            detail: JSON.stringify({ autoReceiptOnReplay: autoReceipts })
+        }));
 }
 
-function onStatusDownloadingTick()
-{
+function onStatusDownloadingTick() {
     var allowStatusDownload = false;
     var checkbox = document.querySelector("#incognito-option-status-downloading .checkbox-incognito");
-    
+
     var checkmark = checkbox.firstElementChild;
-    
-    if (checkbox.getAttribute("class").indexOf("unchecked") > -1)
-    {
+
+    if (checkbox.getAttribute("class").indexOf("unchecked") > -1) {
         tickCheckbox(checkbox, checkmark);
         allowStatusDownload = true;
     }
-    else
-    {
+    else {
         untickCheckbox(checkbox, checkmark);
-        
+
         allowStatusDownload = false;
     }
     browser.runtime.sendMessage({ name: "setOptions", allowStatusDownload: allowStatusDownload });
     document.dispatchEvent(new CustomEvent('onOptionsUpdate',
-    {
-        detail: JSON.stringify({ allowStatusDownload: allowStatusDownload })
-    }));
+        {
+            detail: JSON.stringify({ allowStatusDownload: allowStatusDownload })
+        }));
 }
 
-function onTypingNotificationsTick()
-{
+function onTypingNotificationsTick() {
     var typingNotifications = false;
     var checkbox = document.querySelector("#incognito-option-typing-notifications .checkbox-incognito");
-    
+
     var checkmark = checkbox.firstElementChild;
-    
-    if (checkbox.getAttribute("class").indexOf("unchecked") > -1)
-    {
+
+    if (checkbox.getAttribute("class").indexOf("unchecked") > -1) {
         tickCheckbox(checkbox, checkmark);
         typingNotifications = true;
     }
-    else
-    {
+    else {
         untickCheckbox(checkbox, checkmark);
         typingNotifications = false;
     }
     browser.runtime.sendMessage({ name: "setOptions", typingNotifications: typingNotifications });
     document.dispatchEvent(new CustomEvent('onOptionsUpdate',
-    {
-        detail: JSON.stringify({ typingNotifications: typingNotifications })
-    }));
+        {
+            detail: JSON.stringify({ typingNotifications: typingNotifications })
+        }));
 }
 
-function onStayOnlineTick()
-{
+function onStayOnlineTick() {
     var stayOnline = false;
     var checkbox = document.querySelector("#incognito-option-stay-online .checkbox-incognito");
-    
+
     var checkmark = checkbox.firstElementChild;
-    
-    if (checkbox.getAttribute("class").indexOf("unchecked") > -1)
-    {
+
+    if (checkbox.getAttribute("class").indexOf("unchecked") > -1) {
         tickCheckbox(checkbox, checkmark);
         stayOnline = true;
     }
-    else
-    {
+    else {
         untickCheckbox(checkbox, checkmark);
         stayOnline = false;
     }
     browser.runtime.sendMessage({ name: "setOptions", stayOnline: stayOnline });
     document.dispatchEvent(new CustomEvent('onOptionsUpdate',
-    {
-        detail: JSON.stringify({ stayOnline: stayOnline })
-    }));
+        {
+            detail: JSON.stringify({ stayOnline: stayOnline })
+        }));
 }
 
-function onNextButtonClicked()
-{
+function onNextButtonClicked() {
     var views = Array.from(document.getElementsByClassName("incognito-options-view-container"));
-    
+
     requestAnimationFrame(() => {
-        for (var view of views)
-        {
+        for (var view of views) {
             var prevViewX = getTransformXOfView(view);
             view.style.transform = "translate(" + (prevViewX - 100) + "%, 0%)";
         }
     });
 }
 
-function onBackButtonClicked()
-{
+function onBackButtonClicked() {
     var currentView = document.getElementsByClassName('incognito-options-view-container').length - 1;
-    for (var i = 0; i < document.getElementsByClassName('incognito-options-view-container').length; i++)
-    {
-        if (document.getElementsByClassName('incognito-options-view-container')[i].style.transform == "translate(0%, 0%)")
-        {
+    for (var i = 0; i < document.getElementsByClassName('incognito-options-view-container').length; i++) {
+        if (document.getElementsByClassName('incognito-options-view-container')[i].style.transform == "translate(0%, 0%)") {
             currentView = i;
             break;
         }
     }
 
-    if (currentView > 0)
-    {
+    if (currentView > 0) {
         var views = document.getElementsByClassName('incognito-options-view-container');
-        for (var i = 0; i < views.length; i++)
-        {
+        for (var i = 0; i < views.length; i++) {
             views[i].style.transition = "transform 0.3s ease";
             views[i].style.transform = "translate(" + (i - currentView + 1) * 100 + "%, 0%)";
         }
     }
 }
 
-function getTransformXOfView(view)
-{
+function getTransformXOfView(view) {
     if (view.style.transform.includes("translate"))
         return parseInt(view.style.transform.match(/-?[\d\.]+/g)[0]);
     else
@@ -755,47 +714,42 @@ function getTransformXOfView(view)
 //
 //    Safety Delay
 //
-function onSafetyDelayChanged(event)
-{
-    if (isSafetyDelayValid(event.srcElement.value))
-    {
+function onSafetyDelayChanged(event) {
+    if (isSafetyDelayValid(event.srcElement.value)) {
         var delay = parseInt(event.srcElement.value);
         document.getElementById("incognito-option-safety-delay").disabled = false;
         browser.runtime.sendMessage({ name: "setOptions", safetyDelay: delay });
         document.dispatchEvent(new CustomEvent('onOptionsUpdate',
-        {
-            detail: JSON.stringify({ safetyDelay: delay })
-        }));
+            {
+                detail: JSON.stringify({ safetyDelay: delay })
+            }));
     }
 }
 
-function onSafetyDelayDisabled()
-{
+function onSafetyDelayDisabled() {
     document.getElementById("incognito-option-safety-delay").disabled = true;
     document.getElementById("incognito-radio-enable-safety-delay").checked = false;
     browser.runtime.sendMessage({ name: "setOptions", safetyDelay: 0 });
     document.dispatchEvent(new CustomEvent('onOptionsUpdate',
-    {
-        detail: JSON.stringify({ safetyDelay: 0 })
-    }));
+        {
+            detail: JSON.stringify({ safetyDelay: 0 })
+        }));
 }
 
-function onSafetyDelayEnabled()
-{
+function onSafetyDelayEnabled() {
     var delay = parseInt(document.getElementById("incognito-option-safety-delay").value);
     if (isNaN(delay)) delay = parseInt(document.getElementById("incognito-option-safety-delay").placeholder)
     document.getElementById("incognito-option-safety-delay").disabled = false;
     document.getElementById("incognito-radio-disable-safety-delay").checked = false;
     browser.runtime.sendMessage({ name: "setOptions", safetyDelay: delay });
-    document.dispatchEvent(new CustomEvent('onOptionsUpdate', {detail: JSON.stringify({ safetyDelay: delay })}));
+    document.dispatchEvent(new CustomEvent('onOptionsUpdate', { detail: JSON.stringify({ safetyDelay: delay }) }));
 }
 
 //
 // Utils
 //
 
-async function generateSVGElement(svgImagePath, clazz="", title="", size=24, role="")
-{
+async function generateSVGElement(svgImagePath, clazz = "", title = "", size = 24, role = "") {
     var response = await fetch(svgImagePath);
     var text = await response.text();
     var viewBoxText = text.split('viewBox="')[1].split('"')[0];
@@ -816,8 +770,7 @@ async function generateSVGElement(svgImagePath, clazz="", title="", size=24, rol
     return menuItemElem;
 }
 
-function onNewMessageNodeAdded(messageNode)
-{
+function onNewMessageNodeAdded(messageNode) {
     var data_id = messageNode.getAttribute("data-id");
     if (!data_id) data_id = messageNode.parentElement.parentElement.parentElement.getAttribute("data-id");
     if (data_id == null)
@@ -833,26 +786,21 @@ function onNewMessageNodeAdded(messageNode)
     markMessageNodeDeviceIfPossible(messageNode, msgID);
 }
 
-function restoreViewOnceMessageIfNeeded(messageNode, msgID) 
-{
+function restoreViewOnceMessageIfNeeded(messageNode, msgID) {
     var viewOnceDBOpenRequest = window.indexedDB.open("viewOnce", 2);
-    viewOnceDBOpenRequest.onupgradeneeded = function (event) 
-    {
+    viewOnceDBOpenRequest.onupgradeneeded = function (event) {
         const db = event.target.result;
         var store = db.createObjectStore('msgs', { keyPath: 'id' });
         console.log('WhatsIncognito: Created viewOnce database.');
         store.createIndex("id_index", "id");
     };
 
-    viewOnceDBOpenRequest.onsuccess = function () 
-    {
+    viewOnceDBOpenRequest.onsuccess = function () {
         var viewOnceDB = viewOnceDBOpenRequest.result;
         var keys = viewOnceDB.transaction('msgs', "readonly").objectStore("msgs").getAll();
         keys.onsuccess = () => {
-            keys.result.forEach((value) => 
-            {
-                if (value.id == msgID) 
-                {
+            keys.result.forEach((value) => {
+                if (value.id == msgID) {
                     // we found a view-once message for this message ID
                     // mark the message node as view-once
                     // get the place that we want to place the link
@@ -861,11 +809,9 @@ function restoreViewOnceMessageIfNeeded(messageNode, msgID)
                     // find all div elements in the message node
                     var aElements = messageNode.getElementsByTagName("a");
                     // loop through
-                    for (var i = 0; i < aElements.length; i++) 
-                    {
+                    for (var i = 0; i < aElements.length; i++) {
                         // if the innerHtml indicates it's the "Learn more" link
-                        if (aElements[i].innerHTML.includes("Learn more")) 
-                        {
+                        if (aElements[i].innerHTML.includes("Learn more")) {
                             // set the viewOnceExplanation to the parent div
                             viewOnceExplanation = aElements[i].parentElement;
                         }
@@ -873,8 +819,7 @@ function restoreViewOnceMessageIfNeeded(messageNode, msgID)
                     // set innerHTML to empty
                     viewOnceExplanation.innerHTML = "";
                     // if value.dataURI starts with "data:image"
-                    if (value.dataURI.startsWith("data:image")) 
-                    {
+                    if (value.dataURI.startsWith("data:image")) {
                         // create an image elemnt
                         var img = document.createElement("img");
                         // set the source to the value.dataURI
@@ -883,9 +828,8 @@ function restoreViewOnceMessageIfNeeded(messageNode, msgID)
                         img.style.cssText = "width: 100%;";
                         // append the image to the viewOnceExplanation
                         viewOnceExplanation.appendChild(img);
-                    } 
-                    else if (value.dataURI.startsWith("data:video")) 
-                    {
+                    }
+                    else if (value.dataURI.startsWith("data:video")) {
                         // create a video element
                         var video = document.createElement("video");
                         // set the controls to true
@@ -904,7 +848,7 @@ function restoreViewOnceMessageIfNeeded(messageNode, msgID)
                     }
 
                     // check if there is a caption stored and render it
-                    if(value.caption != null){
+                    if (value.caption != null) {
                         var textSpan = document.createElement("span");
                         var textSpanStyle = "font-style: normal; color: rgba(241, 241, 242, 0.95); margin-top: 10px; margin-bottom: 10px;";
                         textSpan.style.cssText = textSpanStyle;
@@ -941,11 +885,9 @@ function restoreViewOnceMessageIfNeeded(messageNode, msgID)
 // This function gets called on every new message node that gets added to the screen,
 // and takes care of "deleted" messages - 
 // attempts to syntethise a message that was deleted from our DB
-function restoreDeletedMessageIfNeeded(messageNode, msgID) 
-{
-    document.dispatchEvent(new CustomEvent("getDeletedMessageByID", {detail: JSON.stringify({messageID: msgID})}));
-    document.addEventListener("onDeletedMessageReceived", function(e)
-    {
+function restoreDeletedMessageIfNeeded(messageNode, msgID) {
+    document.dispatchEvent(new CustomEvent("getDeletedMessageByID", { detail: JSON.stringify({ messageID: msgID }) }));
+    document.addEventListener("onDeletedMessageReceived", function (e) {
         var data = JSON.parse(e.detail);
         var messageID = data.messageID;
         var messageData = data.messageData;
@@ -957,21 +899,18 @@ function restoreDeletedMessageIfNeeded(messageNode, msgID)
         span.className = UIClassNames.DELETED_MESSAGE_SPAN;
 
         var didFindInDeletedMessagesDB = messageData != undefined;
-        var shouldTryToSyntehesizeMessage  = messageNode.textContent.includes("message was deleted"); // TODO: other locales?
+        var shouldTryToSyntehesizeMessage = messageNode.textContent.includes("message was deleted"); // TODO: other locales?
 
-        if (!didFindInDeletedMessagesDB && !shouldTryToSyntehesizeMessage)
-        {
+        if (!didFindInDeletedMessagesDB && !shouldTryToSyntehesizeMessage) {
             // This is just a regular messsage. move on.
             return;
         }
 
-        if (didFindInDeletedMessagesDB)
-        {
+        if (didFindInDeletedMessagesDB) {
             // This message was deleted and we have the original data.
             messageNode.setAttribute("deleted-message", "true");
 
-            if (!shouldTryToSyntehesizeMessage)
-            {
+            if (!shouldTryToSyntehesizeMessage) {
                 // doesn't loook like a we need to restore anything becuase deletion was blocked already
                 return;
             }
@@ -980,8 +919,7 @@ function restoreDeletedMessageIfNeeded(messageNode, msgID)
         var messageSubElement = messageNode.getElementsByClassName(UIClassNames.CHAT_MESSAGE_INNER_TEXT_DIV)[0]; // oh well
         if (!messageSubElement) return;
 
-        if (!didFindInDeletedMessagesDB && shouldTryToSyntehesizeMessage)
-        {
+        if (!didFindInDeletedMessagesDB && shouldTryToSyntehesizeMessage) {
             messageSubElement.textContent = "";
             textSpan.textContent = "Failed to restore message";
             messageSubElement.appendChild(textSpan);
@@ -1002,8 +940,7 @@ function restoreDeletedMessageIfNeeded(messageNode, msgID)
     });
 }
 
-function tryToSynthesizeMessage(messageSubElement, messageData)
-{
+function tryToSynthesizeMessage(messageSubElement, messageData) {
     messageSubElement.textContent = "";
 
     var titleSpan = document.createElement("span");
@@ -1013,31 +950,27 @@ function tryToSynthesizeMessage(messageSubElement, messageData)
     var titleSpanStyle = "font-style: normal; color: rgb(128, 128, 128)";
     textSpan.style.cssText = textSpanStyle;
     textSpan.className = "copyable-text selectable-text";
-    
+
     titleSpan.style.cssText = titleSpanStyle;
-    if (messageData.isMedia)
-    {
+    if (messageData.isMedia) {
         titleSpan.textContent = "Restored media: \n";
         messageSubElement.appendChild(titleSpan); // Top title span
 
         if (messageData.mediaText) textSpan.textContent = "\n" + messageData.mediaText; //caption text span
-        if (messageData.type === "image")
-        {
+        if (messageData.type === "image") {
             const imgTag = document.createElement("img");
             imgTag.style.cssText = "width: 100%;";
             //imgTag.className = UIClassNames.IMAGE_IMESSAGE_IMG;
             imgTag.src = "data:" + messageData.mimetype + ";base64," + messageData.body;
             messageSubElement.appendChild(imgTag);
         }
-        else if (messageData.type === "sticker")
-        {
+        else if (messageData.type === "sticker") {
             const imgTag = document.createElement("img");
             imgTag.className = UIClassNames.STICKER_MESSAGE_TAG;
             imgTag.src = "data:" + messageData.mimetype + ";base64," + messageData.body;
             messageSubElement.appendChild(imgTag);
         }
-        else if (messageData.type === "video")
-        {
+        else if (messageData.type === "video") {
             const vidTag = document.createElement("video");
             vidTag.controls = true;
             vidTag.style.cssText = "width: 100%;";
@@ -1047,8 +980,7 @@ function tryToSynthesizeMessage(messageSubElement, messageData)
             vidTag.appendChild(sourceTag);
             messageSubElement.appendChild(vidTag);
         }
-        else if (messageData.type === "document")
-        {
+        else if (messageData.type === "document") {
             const aTag = document.createElement("a");
             aTag.download = messageData.fileName;
             aTag.href = "data:" + messageData.mimetype + ";base64," + messageData.body;
@@ -1066,8 +998,7 @@ function tryToSynthesizeMessage(messageSubElement, messageData)
             messageSubElement.appendChild(audioTag);
         }
     }
-    else
-    {
+    else {
         if (messageData.type === "vcard") // contact cards
         {
             let vcardBody = messageData.body;
@@ -1087,8 +1018,7 @@ function tryToSynthesizeMessage(messageSubElement, messageData)
             textSpan.appendChild(aTagPhone);
 
         }
-        else if (messageData.type === "location")
-        {
+        else if (messageData.type === "location") {
             titleSpan.textContent = "Restored location: \n";
             var imgTag = document.createElement("img");
             imgTag.style.cssText = "width: 100%;";
@@ -1103,30 +1033,26 @@ function tryToSynthesizeMessage(messageSubElement, messageData)
             locationLink.textContent = "Google Maps Link";
             messageSubElement.appendChild(locationLink);
         }
-        else
-        {
+        else {
             titleSpan.textContent = "Restored message: \n";
             textSpan.textContent = messageData.body;
             messageSubElement.appendChild(titleSpan);
         }
 
     }
-        
+
     messageSubElement.appendChild(textSpan);
 }
 
-function markMessageNodeDeviceIfPossible(messageNode, msgID)
-{
+function markMessageNodeDeviceIfPossible(messageNode, msgID) {
     var isOutgoingMessage = messageNode.className.includes("message-out");
-    if (isOutgoingMessage)
-    {
+    if (isOutgoingMessage) {
         // we don't want to mark our own messages
         return;
     }
 
-    document.dispatchEvent(new CustomEvent("getDeviceTypeForMessage", {detail: JSON.stringify({messageID: msgID})}));
-    document.addEventListener("onDeviceTypeReceived", async function(e)
-    {
+    document.dispatchEvent(new CustomEvent("getDeviceTypeForMessage", { detail: JSON.stringify({ messageID: msgID }) }));
+    document.addEventListener("onDeviceTypeReceived", async function (e) {
         var data = JSON.parse(e.detail);
         var messageID = data.messageID;
 
@@ -1134,12 +1060,12 @@ function markMessageNodeDeviceIfPossible(messageNode, msgID)
 
         if (messageID != msgID) return;
 
-        var possibleNodes = document.querySelectorAll('[data-id*="' + messageID +'"]');
-        if (possibleNodes.length > 0 )
+        var possibleNodes = document.querySelectorAll('[data-id*="' + messageID + '"]');
+        if (possibleNodes.length > 0)
             messageNode = possibleNodes[0].childNodes[0];
 
         if (messageNode.getElementsByClassName("device-type-image").length > 0) return;
-        
+
         var imageURL = "";
         if (deviceType == "computer")
             imageURL = chrome.runtime.getURL("images/computer.svg");
@@ -1152,8 +1078,7 @@ function markMessageNodeDeviceIfPossible(messageNode, msgID)
         imageElement.className = "device-type-image";
 
         var topMessageNode = messageNode.parentNode.parentNode.parentNode;
-        if (topMessageNode.innerHTML.includes("chat-profile-picture") || topMessageNode.innerHTML.includes("Open chat details"))
-        {
+        if (topMessageNode.innerHTML.includes("chat-profile-picture") || topMessageNode.innerHTML.includes("Open chat details")) {
             imageElement.className += " below-profile-picture";
         }
 
@@ -1161,31 +1086,26 @@ function markMessageNodeDeviceIfPossible(messageNode, msgID)
     });
 }
 
-function tickCheckbox(checkbox, checkmark)
-{
+function tickCheckbox(checkbox, checkmark) {
     var checkboxClass = checkbox.getAttribute("class");
     checkbox.setAttribute("class", checkboxClass.replace("unchecked", "checked") + " incognito-checked");
     checkmark.classList.add("incognito-marked");
 }
 
-function untickCheckbox(checkbox, checkmark)
-{
+function untickCheckbox(checkbox, checkmark) {
     var checkboxClass = checkbox.getAttribute("class");
     var chekmarkClass = checkmark.getAttribute("class");
     checkbox.setAttribute("class", checkboxClass.replace("checked", "unchecked").split("incognito-checked").join(" "));
     checkmark.setAttribute("class", chekmarkClass.replace("incognito-marked", ""));
 }
 
-function isSafetyDelayValid(string)
-{
+function isSafetyDelayValid(string) {
     var number = Math.floor(Number(string));
     return (String(number) === string && number >= 1 && number <= 30) || string == ""
 }
 
-function checkInterception()
-{
-    if (!isInterceptionWorking)
-    {
+function checkInterception() {
+    if (!isInterceptionWorking) {
         Swal.fire({
             title: "Oops...",
             html: "WhatsApp Web Incognito has detected that interception is not working. \
@@ -1201,43 +1121,40 @@ function checkInterception()
     return true;
 }
 
-function updateUIClassNamesIfNeeded()
-{
+function updateUIClassNamesIfNeeded() {
     // this function is meant to support multiples versions of WhatsApp with different GUI element names in the sae time.
     // but it does not sync with injected_ui.js. I need to find a way to share it
 
     var isOlderWAversion = false;
 
-    if (isOlderWAversion)
-    {
+    if (isOlderWAversion) {
         UIClassNames.MENU_ITEM_CLASS = "x1c4vz4f xs83m0k xdl72j9 x1g77sc7 x78zum5 xozqiw3 x1oa3qoh x12fk4p8 xeuugli x2lwn1j x1nhvcw1 x1q0g3np x1cy8zhl x100vrsf x1vqgdyp xhslqc4 x1ekkm8c x1143rjc xum4auv xj21bgg x1277o0a x13i9f1t xr9ek0c xjpr12u";
         UIClassNames.MENU_ITEM_INNER_CLASS = "xjb2p0i xk390pu x1heor9g x1ypdohk xjbqb8w x972fbf x10w94by x1qhh985 x14e42zd xtnn1bt x9v5kkp xmw7ebm xrdum7p xt8t1vi x1xc408v x129tdwq x15urzxu xh8yej3 x1iorvi4 x11lfxj5 xjkvuk6 x135b78x"; // inner button
         UIClassNames.MENU_ITEM_HIGHLIGHTED_CLASS = " xhslqc4 x14ug900 xzs022t"; // you need to find the differences between the classes groups
-        
+
         UIClassNames.OUTER_DROPDOWN_CLASS = "_ak4w _ap4- _ap4_"; // outside class of dropdown with "mark as unread"
         UIClassNames.DROPDOWN_CLASS = "_ap4_";
         UIClassNames.DROPDOWN_ENTRY_CLASS = "_aj-r _aj-q _aj-_ _asi6 _ap51";
-        
+
         UIClassNames.UNREAD_COUNTER_CLASS = "xyp3urf"; // the span class that sets background-color to var(--unread-marker-background)
-        
+
         UIClassNames.CHAT_PANEL_CLASS = "x14yy4lh"; // the outermost chat panel class (was used in the past for safety delay feature)
         UIClassNames.INNER_CHAT_PANEL_CLASS = "x3psx0u"; // the innermost chat panel class ('conversation-panel-messages')
-        
+
         UIClassNames.CHAT_ENTRY_CLASS = "x10l6tqk xh8yej3 x1g42fcv "; // the chat entry in the chats list
         UIClassNames.UNREAD_MARKER_CLASS = "xqhmz9w"; // the "X unread messages" warning inside the chat panel; the class inside the top-level item
         UIClassNames.UNREAD_MARKER_CLASS_2 = "x1mnlqng"; // HACKKKKKKKK 
         UIClassNames.UNREAD_MARKER_CLASS_3 = "xhsao0n"; // HACKKKKK 2
 
         UIClassNames.GLOBAL_COLORS_CONTAINER_SELECTOR = ".x1h89ln0.x1h89ln0, .x1h89ln0.x1h89ln0:root"; // look for the selector in which the unread counter's color is defined
-        
+
         UIClassNames.CHAT_MESSAGE = "messag-in";
         UIClassNames.CHAT_MESSAGE_INNER_TEXT_DIV = "x1lliihq xh8yej3";
     }
 
 }
 
-function isNumberKey(evt)
-{
+function isNumberKey(evt) {
     var charCode = (evt.which) ? evt.which : event.keyCode
     if (charCode > 31 && (charCode < 48 || charCode > 57))
         return false;
