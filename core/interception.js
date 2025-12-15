@@ -3330,6 +3330,8 @@ var selectedTimelineUsers = new Set();
 var timelineRangeDays = 1;
 var timelineZoomLevel = 1;
 var timelineShowOverlaps = false;
+var timelineShowInterruptions = false;
+var timelineEndTime = null;
 
 async function resolveName(jid) {
     if (!jid) return "Unknown";
@@ -3436,16 +3438,28 @@ async function renderTimelineView(container) {
                    <div style="display: flex; align-items: center;">
                        <span style="font-size: 13px; color: #41525d; margin-right: 8px;">Range:</span>
                        <select id="timeline-range-select" style="padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; cursor: pointer; color: #111b21 !important; background-color: white !important;">
+                           <option value="hour" ${timelineRangeDays == 'hour' ? 'selected' : ''}>Hourly View</option>
                            <option value="1" ${timelineRangeDays == 1 ? 'selected' : ''}>last 24 Hours</option>
                            <option value="3" ${timelineRangeDays == 3 ? 'selected' : ''}>last 3 Days</option>
                            <option value="7" ${timelineRangeDays == 7 ? 'selected' : ''}>last 7 Days</option>
                            <option value="30" ${timelineRangeDays == 30 ? 'selected' : ''}>last 30 Days</option>
                        </select>
                    </div>
+                   
+                   <div id="timeline-hour-controls" style="display: ${timelineRangeDays == 'hour' ? 'flex' : 'none'}; align-items: center; margin-left: 10px;">
+                       <button id="timeline-prev-hour" style="background: white; border: 1px solid #ddd; border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 14px; color: #54656f;">&lt;</button>
+                       <span id="timeline-current-time-display" style="font-size: 12px; margin: 0 8px; min-width: 140px; text-align: center; color: #54656f;"></span>
+                       <button id="timeline-next-hour" style="background: white; border: 1px solid #ddd; border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 14px; color: #54656f;">&gt;</button>
+                   </div>
+
                    <div style="display: flex; align-items: center;">
                        <label style="display: flex; align-items: center; font-size: 13px; color: #41525d; margin-right: 15px; cursor: pointer;">
                            <input type="checkbox" id="timeline-show-overlaps" ${timelineShowOverlaps ? 'checked' : ''} style="margin-right: 6px;">
                            Highlight Overlaps
+                       </label>
+                       <label style="display: flex; align-items: center; font-size: 13px; color: #41525d; margin-right: 15px; cursor: pointer;">
+                           <input type="checkbox" id="timeline-show-interruptions" ${timelineShowInterruptions ? 'checked' : ''} style="margin-right: 6px;">
+                           Show Interruptions
                        </label>
                    </div>
                    <div style="display: flex; align-items: center;">
@@ -3481,15 +3495,52 @@ async function renderTimelineView(container) {
     var rangeSelect = document.getElementById('timeline-range-select');
     if (rangeSelect) {
         rangeSelect.onchange = function () {
-            timelineRangeDays = parseInt(this.value);
+            if (this.value === 'hour') {
+                timelineRangeDays = 'hour';
+                timelineEndTime = Date.now();
+                document.getElementById('timeline-hour-controls').style.display = 'flex';
+            } else {
+                timelineRangeDays = parseInt(this.value);
+                timelineEndTime = null;
+                document.getElementById('timeline-hour-controls').style.display = 'none';
+            }
             drawTimelineGraph(document.getElementById('timeline-graph-container'));
         };
+    }
+
+    var prevHourBtn = document.getElementById('timeline-prev-hour');
+    var nextHourBtn = document.getElementById('timeline-next-hour');
+
+    if (prevHourBtn) {
+        prevHourBtn.onclick = function () {
+            if (!timelineEndTime) timelineEndTime = Date.now();
+            timelineEndTime -= 3600000; // -1 hour
+            drawTimelineGraph(document.getElementById('timeline-graph-container'));
+        }
+    }
+
+    if (nextHourBtn) {
+        nextHourBtn.onclick = function () {
+            if (!timelineEndTime) timelineEndTime = Date.now();
+            var nextTime = timelineEndTime + 3600000;
+            if (nextTime > Date.now()) nextTime = Date.now();
+            timelineEndTime = nextTime;
+            drawTimelineGraph(document.getElementById('timeline-graph-container'));
+        }
     }
 
     var overlappingCheckbox = document.getElementById('timeline-show-overlaps');
     if (overlappingCheckbox) {
         overlappingCheckbox.onchange = function () {
             timelineShowOverlaps = this.checked;
+            drawTimelineGraph(document.getElementById('timeline-graph-container'));
+        };
+    }
+
+    var interruptionsCheckbox = document.getElementById('timeline-show-interruptions');
+    if (interruptionsCheckbox) {
+        interruptionsCheckbox.onchange = function () {
+            timelineShowInterruptions = this.checked;
             drawTimelineGraph(document.getElementById('timeline-graph-container'));
         };
     }
@@ -3517,8 +3568,27 @@ function drawTimelineGraph(container) {
 
     var users = Array.from(selectedTimelineUsers);
     var now = Date.now();
-    var durationMs = timelineRangeDays * 24 * 60 * 60 * 1000;
-    var startTime = now - durationMs;
+    var currentEndDate = (timelineRangeDays === 'hour' && timelineEndTime) ? timelineEndTime : now;
+    // Cap at now if somehow it went beyond
+    if (currentEndDate > now) currentEndDate = now;
+
+    var durationMs;
+    if (timelineRangeDays === 'hour') {
+        durationMs = 3600000; // 1 hour
+    } else {
+        durationMs = timelineRangeDays * 24 * 60 * 60 * 1000;
+    }
+
+    var startTime = currentEndDate - durationMs;
+
+    // Update time display if in hourly mode
+    if (timelineRangeDays === 'hour') {
+        var displayEl = document.getElementById('timeline-current-time-display');
+        if (displayEl) {
+            displayEl.textContent = new Date(startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + " - " +
+                new Date(currentEndDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+    }
 
     // Get all sessions
     var allSessions = {};
@@ -3549,6 +3619,38 @@ function drawTimelineGraph(container) {
         axisLabelsHtml += `<span style="position: absolute; left: ${leftPos}%; transform: translateX(-50%); font-size: 11px; color: #667781; white-space: nowrap;">${labelStr}</span>`;
     }
 
+    // Prepare interruptions html if enabled
+    var interruptionsHtml = '';
+    if (timelineShowInterruptions) {
+        var gaps = window.OnlineTracker.getSystemGaps();
+        gaps.forEach(gap => {
+            var gStart = Math.max(gap.start, startTime);
+            var gEnd = Math.min(gap.end, now);
+
+            if (gEnd > gStart) {
+                var left = ((gStart - startTime) / durationMs) * 100;
+                var width = ((gEnd - gStart) / durationMs) * 100;
+                var gapDurationStr = formatDuration(gap.end - gap.start);
+                var gapDateStr = new Date(gap.start).toLocaleString();
+
+                interruptionsHtml += `
+                    <div style="position: absolute; left: ${left}%; width: ${width}%; height: 100%; 
+                                background: repeating-linear-gradient(
+                                  45deg,
+                                  rgba(0, 0, 0, 0.05),
+                                  rgba(0, 0, 0, 0.05) 10px,
+                                  rgba(0, 0, 0, 0.1) 10px,
+                                  rgba(0, 0, 0, 0.1) 20px
+                                ); 
+                                border-left: 1px dashed rgba(0,0,0,0.2);
+                                border-right: 1px dashed rgba(0,0,0,0.2);
+                                pointer-events: auto; z-index: 0;"
+                                title="System Interruption\n${gapDateStr}\nDuration: ${gapDurationStr}"
+                    ></div>
+               `;
+            }
+        });
+    }
 
     var graphHtml = `
         <div style="position: relative; min-width: 100%; width: ${minWidthPercent}%;">
@@ -3563,15 +3665,20 @@ function drawTimelineGraph(container) {
         var name = (window._timelineNames && window._timelineNames[jid]) || jid.split('@')[0];
 
         graphHtml += `
-            <div style="display: flex; align-items: center; margin-bottom: 15px; height: 30px;">
-                <div style="position: sticky; left: 0; width: 120px; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 15px; text-align: right; background: white; z-index: 2; color: #111b21 !important;" title="${jid}">
+            <div style="display: flex; align-items: center; margin-bottom: 8px; height: 40px; border-radius: 4px; transition: background 0.1s;" onmouseover="this.style.background='#f9f9f9'" onmouseout="this.style.background='transparent'">
+                <div style="position: sticky; left: 0; width: 130px; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 15px; text-align: right; background: inherit; z-index: 2; color: #111b21 !important; border-right: 1px solid #f0f0f0;" title="${jid}">
                     ${name}
                 </div>
-                <div style="flex: 1; position: relative; height: 20px; background: #f5f5f5; border-radius: 4px; overflow: hidden;">
+                <div style="flex: 1; position: relative; height: 32px; background: #f5f5f5; border-radius: 4px; overflow: hidden; margin-left: 10px;">
                    <!-- Grid lines -->
                    <div style="position: absolute; top:0; left:0; width: 100%; height: 100%; pointer-events: none;">
-                       ${[0.2, 0.4, 0.6, 0.8].map(p => `<div style="position: absolute; left: ${p * 100}%; height: 100%; border-left: 1px dashed #e0e0e0;"></div>`).join('')}
+                       ${[0.2, 0.4, 0.5, 0.6, 0.8].map(p => {
+            var style = (p === 0.5) ? "border-left: 1px solid #d0d0d0;" : "border-left: 1px dashed #e0e0e0;";
+            return `<div style="position: absolute; left: ${p * 100}%; height: 100%; ${style}"></div>`
+        }).join('')}
                    </div>
+                   <!-- Interruptions Overlay -->
+                   ${interruptionsHtml}
         `;
 
         sessions.forEach(session => {

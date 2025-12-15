@@ -16,8 +16,23 @@ window.OnlineTracker = {
     removeTrackedUser: removeTrackedUser,
     isTrackedUser: isTrackedUser,
     subscribeToPresence: subscribeToPresence,
-    getSessionsFromLogs: getSessionsFromLogs
+    subscribeToPresence: subscribeToPresence,
+    getSessionsFromLogs: getSessionsFromLogs,
+    getSystemGaps: getSystemGaps
 };
+
+function getSystemGaps() {
+    var logs = getLogs();
+    var gapLogs = logs.filter(l => l.jid === 'SYSTEM' && l.status === 'gap');
+
+    return gapLogs.map(l => {
+        var duration = (l.metadata && l.metadata.duration) ? l.metadata.duration : (typeof l.metadata === 'number' ? l.metadata : 0);
+        return {
+            start: l.timestamp,
+            end: l.timestamp + duration
+        };
+    });
+}
 
 function getSessionsFromLogs(jid, logs) {
     if (!logs) logs = getLogs();
@@ -416,7 +431,8 @@ function initializeTrackerConnection() {
         // If gap > 30 seconds, log a "CDC Gap" event
         if (diff > 30000) {
             console.log("Tracker Gap detected:", diff, "ms");
-            storeOnlineStatusLog("SYSTEM", "gap", lastHeartbeat, diff, "Tracker Offline");
+            console.log("Tracker Gap detected:", diff, "ms");
+            storeOnlineStatusLog("SYSTEM", "gap", lastHeartbeat, { duration: diff }, "Tracker Offline");
         }
     }
 }
