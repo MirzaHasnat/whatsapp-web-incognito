@@ -3329,6 +3329,7 @@ console.log('[WAIncognito] interception.js loaded and functions exposed to windo
 var selectedTimelineUsers = new Set();
 var timelineRangeDays = 1;
 var timelineZoomLevel = 1;
+var timelineShowOverlaps = false;
 
 async function resolveName(jid) {
     if (!jid) return "Unknown";
@@ -3442,6 +3443,12 @@ async function renderTimelineView(container) {
                        </select>
                    </div>
                    <div style="display: flex; align-items: center;">
+                       <label style="display: flex; align-items: center; font-size: 13px; color: #41525d; margin-right: 15px; cursor: pointer;">
+                           <input type="checkbox" id="timeline-show-overlaps" ${timelineShowOverlaps ? 'checked' : ''} style="margin-right: 6px;">
+                           Highlight Overlaps
+                       </label>
+                   </div>
+                   <div style="display: flex; align-items: center;">
                        <span style="font-size: 13px; color: #41525d; margin-right: 8px;">Zoom:</span>
                        <input type="range" id="timeline-zoom-slider" min="1" max="10" step="0.5" value="${timelineZoomLevel}" style="width: 100px; cursor: pointer;">
                        <span id="timeline-zoom-val" style="font-size: 11px; color: #111b21 !important; width: 30px; text-align: right;">${timelineZoomLevel}x</span>
@@ -3475,6 +3482,14 @@ async function renderTimelineView(container) {
     if (rangeSelect) {
         rangeSelect.onchange = function () {
             timelineRangeDays = parseInt(this.value);
+            drawTimelineGraph(document.getElementById('timeline-graph-container'));
+        };
+    }
+
+    var overlappingCheckbox = document.getElementById('timeline-show-overlaps');
+    if (overlappingCheckbox) {
+        overlappingCheckbox.onchange = function () {
+            timelineShowOverlaps = this.checked;
             drawTimelineGraph(document.getElementById('timeline-graph-container'));
         };
     }
@@ -3583,6 +3598,60 @@ function drawTimelineGraph(container) {
                         title="${name}\nOnline: ${startTimeStr}\nUntil: ${endTimeStr}\nDuration: ${session.end ? formatDuration(session.end - session.start) : 'Active'}"
                     ></div>
                 `;
+
+                // Calculate Overlaps if enabled
+                if (timelineShowOverlaps && users.length > 1) {
+                    var overlapIntervals = [];
+
+                    users.forEach(otherJid => {
+                        if (otherJid === jid) return;
+                        var otherSessions = allSessions[otherJid];
+                        otherSessions.forEach(os => {
+                            var osStart = Math.max(os.start, startTime);
+                            var osEnd = Math.min(os.end || now, now);
+
+                            var intersectionStart = Math.max(s, osStart);
+                            var intersectionEnd = Math.min(e, osEnd);
+
+                            if (intersectionEnd > intersectionStart) {
+                                overlapIntervals.push({ start: intersectionStart, end: intersectionEnd });
+                            }
+                        });
+                    });
+
+                    // Merge overlaps
+                    if (overlapIntervals.length > 0) {
+                        overlapIntervals.sort((a, b) => a.start - b.start);
+                        var merged = [];
+                        var current = overlapIntervals[0];
+                        for (var k = 1; k < overlapIntervals.length; k++) {
+                            var next = overlapIntervals[k];
+                            if (next.start < current.end) {
+                                current.end = Math.max(current.end, next.end);
+                            } else {
+                                merged.push(current);
+                                current = next;
+                            }
+                        }
+                        merged.push(current);
+
+                        merged.forEach(ov => {
+                            var ovLeft = ((ov.start - startTime) / durationMs) * 100;
+                            var ovWidth = ((ov.end - ov.start) / durationMs) * 100;
+                            graphHtml += `
+                                <div style="
+                                    position: absolute; 
+                                    left: ${ovLeft}%; 
+                                    width: ${ovWidth}%; 
+                                    height: 100%; 
+                                    background-color: #ef5350;
+                                    pointer-events: none;
+                                    z-index: 2;"
+                                ></div>
+                            `;
+                        });
+                    }
+                }
             }
         });
 

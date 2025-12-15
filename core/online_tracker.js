@@ -43,10 +43,15 @@ function getSessionsFromLogs(jid, logs) {
                 // Offline without online start? Maybe started before logs began?
                 // Or we can assume it started recently if we have metadata.duration
                 if (log.metadata && log.metadata.duration) {
-                    sessions.push({
-                        start: log.timestamp - log.metadata.duration,
-                        end: log.timestamp
-                    });
+                    // Only create a session if the previous status was actually online.
+                    // If we are logging repeated offline events (e.g. heartbeat), 
+                    // the duration represents offline time, not online time.
+                    if (log.metadata.previousStatus === 'online' || !log.metadata.previousStatus) {
+                        sessions.push({
+                            start: log.timestamp - log.metadata.duration,
+                            end: log.timestamp
+                        });
+                    }
                 }
             }
         }
