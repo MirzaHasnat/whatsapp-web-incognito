@@ -3,19 +3,19 @@ injectScript('core/ws_hook.js'); // important to inject as early as possible
 injectOtherScripts();
 
 async function injectOtherScripts() {
-	injectScript('lib/pbf.3.0.5.min.js');
-	injectScript('lib/libsignal-protocol-ee5b8ba.min.js');
-	injectScript('lib/pako.js');
-	injectScript('lib/wppconnect-wa.js')
+	await injectScript('lib/pbf.3.0.5.min.js');
+	await injectScript('lib/libsignal-protocol-ee5b8ba.min.js');
+	await injectScript('lib/pako.js');
+	await injectScript('lib/wppconnect-wa.js');
 
-	injectScript('core/parsing/binary_reader.js');
-	injectScript('core/parsing/binary_writer.js');
-	injectScript('core/parsing/node_reader_writer.js');
-	injectScript('core/parsing/protobuf/WhisperTextProtocol.js');
-	injectScript('core/parsing/protobuf/WAProto.js');
+	await injectScript('core/parsing/binary_reader.js');
+	await injectScript('core/parsing/binary_writer.js');
+	await injectScript('core/parsing/node_reader_writer.js');
+	await injectScript('core/parsing/protobuf/WhisperTextProtocol.js');
+	await injectScript('core/parsing/protobuf/WAProto.js');
 
-	injectScript('core/utils.js');
-	injectScript('core/ui_class_names.js');
+	await injectScript('core/utils.js');
+	await injectScript('core/ui_class_names.js');
 
 	// Load interception.js before injected_ui.js to ensure window.showWhatsAppActivityLogs is available
 	// Load online_tracker.js and interception.js

@@ -330,26 +330,44 @@ function addTrackedUser(jid) {
 
 function subscribeToPresence(jid) {
     try {
-        // 1. Try internal API
-        if (window.WhatsAppAPI && window.WhatsAppAPI.Communication && window.WhatsAppAPI.Communication.subscribePresence) {
-            window.WhatsAppAPI.Communication.subscribePresence(jid);
+        var subscribed = false;
+
+        // 1. Try internal Store.Presence (Common in recent WA Web versions)
+        if (window.Store && window.Store.Presence && window.Store.Presence.subscribe) {
+            window.Store.Presence.subscribe(jid);
+            subscribed = true;
             if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
-                console.log("[OnlineTracker] Subscribed to presence using Internal API:", jid);
+                console.log("[OnlineTracker] Subscribed using Store.Presence for:", jid);
             }
-            return;
         }
 
-        // 2. Try WPP Connect
-        if (typeof WPP !== 'undefined' && WPP.chat && WPP.chat.openChatBottom) {
-            // WPP doesn't have a direct "subscribe" but opening chat usually triggers it. 
-            // However, strictly speaking, just ensuring we have the chat object might work.
-            // Or we can try WPP.chat.get(jid)
-            // WPP.chat.get might be sync or async depending on version
-            Promise.resolve(WPP.chat.get(jid)).then((chat) => {
-                if (typeof WAdebugMode !== 'undefined' && WAdebugMode) console.log("[OnlineTracker] Refreshed WPP chat for presence:", jid);
-            }).catch(e => {
-                // Ignore errors if chat not found
-            });
+        // 2. Try internal WhatsAppAPI Communication
+        if (!subscribed && window.WhatsAppAPI && window.WhatsAppAPI.Communication && window.WhatsAppAPI.Communication.subscribePresence) {
+            window.WhatsAppAPI.Communication.subscribePresence(jid);
+            subscribed = true;
+            if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
+                console.log("[OnlineTracker] Subscribed using Internal API for:", jid);
+            }
+        }
+
+        // 3. Try WPP Connect Fallbacks (Always try this as backup/supplement)
+        if (typeof WPP !== 'undefined' && WPP.chat) {
+            // Trying to get the chat model often triggers a sync
+            if (WPP.chat.get) {
+                Promise.resolve(WPP.chat.get(jid)).catch(() => { });
+            }
+
+            // Explicitly query last seen if available - this forces a presence check
+            if (WPP.chat.getLastSeen) {
+                WPP.chat.getLastSeen(jid).then(ls => {
+                    // This is just to trigger the request, we don't necessarily use the result here
+                    // as the main tracker logic listens to the 'presence' node updates.
+                }).catch(() => { });
+            }
+
+            if (!subscribed && typeof WAdebugMode !== 'undefined' && WAdebugMode) {
+                console.log("[OnlineTracker] Attempted WPP presence trigger for:", jid);
+            }
         }
 
     } catch (e) {
