@@ -8,6 +8,15 @@ You can find the original extension in [Chrome Web Store](https://chrome.google.
 ## Notable Features
 - Block "read" receipts sending, and decide when to send them later (works for statuses as well)
 - Block "typing"/"seen" updates (Will prevent you from seeing others')
+- **Online Presence Tracker**:
+  - Track when selected users go online/offline.
+  - **Timeline View**: Visual graph to compare online activity of multiple users over 24h, 3 days, or more.
+  - View detailed logs of online sessions with duration and "Last Seen" info.
+  - **Stay Online**: Optional feature to keep your own presence as "Online" indefinitely.
+- **Activity & Typing Logs**:
+  - Get notified when specific users start typing (System & In-App Toast notifications).
+  - Manage "exclusions" to mute typing notifications for specific users.
+  - View history of typing activities.
 - Always restore deleted messages of all kinds
 - See whether every message was sent from a phone or a computer
 - Download statuses
@@ -32,11 +41,16 @@ Other files inside the `core` folder deal with the infrastructure that makes the
 
 If you want to see what kind of messages WhatsApp is sending and receiving over WebSocket in real-time, you can type `WAdebugMode = true` in the javascript console. Incoming and outgoing payloads (after decryption) will be printed out.
 
-## Other browsers support
-This is more experimental, but should work.
-If you want to use this extension in Firefox, you can load it using the developer page as explained in issue [#38](https://github.com/tomer8007/whatsapp-web-incognito/issues/38)
+## MacOS Support (Safari)
+To run this extension on macOS (Safari), you can convert it using Xcode's command line tools:
 
-Safari support for macOS was implemented in [@taksh108](https://github.com/taksh108)'s fork [here](https://github.com/tomer8007/whatsapp-web-incognito/pull/63)
+1. Ensure you have **Xcode** installed.
+2. Run the following command in your terminal:
+   ```bash
+   xcrun safari-web-extension-converter /path/to/whatsapp-web-incognito
+   ```
+3. Xcode will open a new project with the converted extension.
+4. Run the project in Xcode to build and install the extension in Safari.
 
 ## Privacy
 No data is ever transmitted to anywhere. Privacy policy [here](https://github.com/tomer8007/whatsapp-web-incognito/wiki/Chrome-Extension-Privacy-Policy).
