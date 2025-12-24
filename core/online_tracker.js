@@ -354,15 +354,30 @@ function subscribeToPresence(jid) {
         if (typeof WPP !== 'undefined' && WPP.chat) {
             // Trying to get the chat model often triggers a sync
             if (WPP.chat.get) {
-                Promise.resolve(WPP.chat.get(jid)).catch(() => { });
+                try {
+                    Promise.resolve(WPP.chat.get(jid)).catch((e) => {
+                        if (window.storeErrorLog) window.storeErrorLog("WPP.chat.get failed: " + (e ? e.message : "unknown"), jid);
+                    });
+                } catch (e) {
+                    if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
+                        console.error("[OnlineTracker] Error calling WPP.chat.get:", e);
+                    }
+                    if (window.storeErrorLog) window.storeErrorLog("WPP.chat.get error: " + e.message, jid);
+                }
             }
 
             // Explicitly query last seen if available - this forces a presence check
             if (WPP.chat.getLastSeen) {
-                WPP.chat.getLastSeen(jid).then(ls => {
-                    // This is just to trigger the request, we don't necessarily use the result here
-                    // as the main tracker logic listens to the 'presence' node updates.
-                }).catch(() => { });
+                try {
+                    WPP.chat.getLastSeen(jid).then(ls => {
+                        // This is just to trigger the request, we don't necessarily use the result here
+                        // as the main tracker logic listens to the 'presence' node updates.
+                    }).catch((e) => {
+                        if (window.storeErrorLog) window.storeErrorLog("WPP.chat.getLastSeen failed", jid);
+                    });
+                } catch (e) {
+                    if (window.storeErrorLog) window.storeErrorLog("WPP.chat.getLastSeen error: " + e.message, jid);
+                }
             }
 
             if (!subscribed && typeof WAdebugMode !== 'undefined' && WAdebugMode) {
@@ -370,8 +385,14 @@ function subscribeToPresence(jid) {
             }
         }
 
+        // Report if no subscription method worked (and wasn't just a WPP trigger)
+        if (!subscribed && (!window.Store || !window.Store.Presence)) {
+            if (window.storeErrorLog) window.storeErrorLog("Failed to subscribe: Store.Presence missing", jid);
+        }
+
     } catch (e) {
         console.error("[OnlineTracker] Error subscribing to presence:", e);
+        if (window.storeErrorLog) window.storeErrorLog("Subscription Fatal Error: " + e.message, jid);
     }
 }
 

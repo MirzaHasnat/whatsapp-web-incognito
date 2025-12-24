@@ -2283,7 +2283,10 @@ function createSystemNotification(displayName) {
     try {
         // Check if chrome object is available
         var iconUrl = 'images/icon_128_blue.png';
-        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
+        var baseUrlMeta = document.querySelector('meta[name="wa-incognito-base-url"]');
+        if (baseUrlMeta && baseUrlMeta.content) {
+            iconUrl = baseUrlMeta.content + 'images/icon_128_blue.png';
+        } else if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
             iconUrl = chrome.runtime.getURL('images/icon_128_blue.png');
         }
 
@@ -2302,7 +2305,8 @@ function createSystemNotification(displayName) {
 }
 
 // Function to store typing logs
-function storeTypingLog(displayName, jid) {
+// Generic function to store activity logs
+function storeActivityLog(displayName, jid, action, details) {
     try {
         // Get additional information
         var currentPageTitle = document.title || "WhatsApp Web";
@@ -2313,26 +2317,27 @@ function storeTypingLog(displayName, jid) {
             id: generateLogId(),
             userName: displayName,
             jid: jid,
-            action: "Typing",
+            action: action || "Unknown",
             dateTime: new Date().toISOString(),
             timestamp: Date.now(),
             onWhatsappTab: isWindowVisible(),
             pageTitle: currentPageTitle,
             pageUrl: currentUrl,
             userAgent: navigator.userAgent,
-            language: navigator.language || "unknown"
+            language: navigator.language || "unknown",
+            details: details || {}
         };
 
         // Log for debugging
         if (WAdebugMode) {
-            console.log("[Typing Notification] Storing log entry:", logEntry);
+            console.log("[Activity Log] Storing log entry:", logEntry);
         }
 
         // Send message to background script to store the log
         if (typeof chrome !== 'undefined' && chrome.runtime) {
             try {
                 if (WAdebugMode) {
-                    console.log("[Typing Notification] Sending log to background:", logEntry);
+                    console.log("[Activity Log] Sending log to background:", logEntry);
                 }
 
                 // Try to get the extension ID dynamically first, fallback to hardcoded if needed
@@ -2344,48 +2349,61 @@ function storeTypingLog(displayName, jid) {
                 }, function (response) {
                     if (chrome.runtime.lastError) {
                         if (WAdebugMode) {
-                            console.log("[Typing Notification] Background script not available, using localStorage");
+                            console.log("[Activity Log] Background script not available, using localStorage");
                         }
                         // Fallback to localStorage if background script is not available
                         fallbackToLocalStorage(logEntry);
                     } else {
                         // Background script is available, send the actual log
                         chrome.runtime.sendMessage(extensionId, {
-                            name: "storeTypingLog",
+                            name: "storeTypingLog", // Keep legacy name for background compatibility or update background? 
+                            // Assuming background script just stores "logEntry", sending as storeTypingLog might be safe if it doesn't validate action.
+                            // However, strictly speaking, we are sending an "Activity Log". 
+                            // If background script blindly stores it, we are fine.
                             logEntry: logEntry
                         }, function (response) {
                             if (chrome.runtime.lastError) {
                                 if (WAdebugMode) {
-                                    console.log("[Typing Notification] Error sending log to background:", chrome.runtime.lastError);
+                                    console.log("[Activity Log] Error sending log to background:", chrome.runtime.lastError);
                                 }
                                 // Fallback to localStorage if messaging fails
                                 fallbackToLocalStorage(logEntry);
                             } else if (WAdebugMode) {
-                                console.log("[Typing Notification] Successfully sent log to background");
+                                console.log("[Activity Log] Successfully sent log to background");
                             }
                         });
                     }
                 });
             } catch (sendMessageError) {
                 if (WAdebugMode) {
-                    console.log("[Typing Notification] Error sending message to background:", sendMessageError);
+                    console.log("[Activity Log] Error sending message to background:", sendMessageError);
                 }
                 // Fallback to localStorage if messaging fails
                 fallbackToLocalStorage(logEntry);
             }
         } else {
             if (WAdebugMode) {
-                console.log("[Typing Notification] chrome.runtime not available, using localStorage");
+                console.log("[Activity Log] chrome.runtime not available, using localStorage");
             }
             // Fallback to localStorage if chrome.runtime is not available
             fallbackToLocalStorage(logEntry);
         }
     } catch (error) {
         if (WAdebugMode) {
-            console.log("[Typing Notification] Error in storeTypingLog:", error);
+            console.log("[Activity Log] Error in storeActivityLog:", error);
         }
     }
 }
+
+// Function to store typing logs (Legacy wrapper)
+function storeTypingLog(displayName, jid) {
+    storeActivityLog(displayName, jid, "Typing");
+}
+
+// Function to store error logs
+window.storeErrorLog = function (message, jid) {
+    storeActivityLog("System Error", jid || "N/A", "Error", { message: message });
+};
 
 // Fallback function to store logs in localStorage
 function fallbackToLocalStorage(logEntry) {
@@ -3776,6 +3794,7 @@ function drawTimelineGraph(container) {
     }
 }
 
+
 function formatDuration(ms) {
     if (ms < 1000) return ms + "ms";
     var s = Math.floor(ms / 1000);
@@ -3785,3 +3804,69 @@ function formatDuration(ms) {
     var h = Math.floor(m / 60);
     return h + "h " + (m % 60) + "m";
 }
+
+// Internal module exposure logic to fix window.Store availability
+var modulesExposed = false;
+function exposeWhatsAppInternals() {
+    if (modulesExposed) return;
+
+    // Ensure moduleRaid is available (it might be loaded async)
+    if (!window.mR && window.moduleRaid) {
+        try { window.mR = new window.moduleRaid(); } catch (e) { /* wait for webpack */ }
+    }
+    if (typeof getModuleFinder === 'function' && !window.mR) {
+        try { window.mR = getModuleFinder(); } catch (e) { }
+    }
+    if (!window.mR) return;
+
+    if (!window.Store) window.Store = {};
+    if (!window.Store.Presence) {
+        // Method 1: finding by string 'subscribePresence' (used in recent versions)
+        var results = window.mR.findModule('subscribePresence');
+        if (results && results.length > 0) {
+            var mod = results.find(m => m.subscribePresence);
+            if (mod) {
+                window.Store.Presence = {
+                    subscribe: mod.subscribePresence,
+                    unsubscribe: mod.unsubscribePresence,
+                    // Copy other props if needed
+                    ...mod
+                };
+                console.log("[WAIncognito] Found Presence module via subscribePresence");
+            }
+        }
+
+        // Method 2: Fallback to setPresenceAvailable (older versions)
+        if (!window.Store.Presence) {
+            var results2 = window.mR.findModule('setPresenceAvailable');
+            if (results2 && results2.length > 0) {
+                var mod2 = results2[0];
+                if (mod2) {
+                    window.Store.Presence = mod2;
+                    console.log("[WAIncognito] Found Presence module via setPresenceAvailable");
+                }
+            }
+        }
+
+        // Method 3: Try generic 'chatstate' handling which often accompanies presence
+        if (!window.Store.Presence) {
+            var results3 = window.mR.findModule('sendChatStateComposing');
+            if (results3 && results3.length > 0) {
+                var mod3 = results3.find(m => m.subscribePresence);
+                if (mod3) {
+                    window.Store.Presence = mod3;
+                    console.log("[WAIncognito] Found Presence module via sendChatStateComposing");
+                }
+            }
+        }
+    }
+
+    // If we managed to find Presence, mark as exposed/done
+    if (window.Store.Presence) {
+        modulesExposed = true;
+    }
+}
+
+// Periodically check for modules until found
+setInterval(exposeWhatsAppInternals, 1000);
+

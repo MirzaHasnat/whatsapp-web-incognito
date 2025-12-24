@@ -1,8 +1,12 @@
-
 injectScript('core/ws_hook.js'); // important to inject as early as possible
 injectOtherScripts();
 
 async function injectOtherScripts() {
+	var meta = document.createElement('meta');
+	meta.name = "wa-incognito-base-url";
+	meta.content = chrome.runtime.getURL('');
+	(document.head || document.documentElement).appendChild(meta);
+
 	await injectScript('lib/pbf.3.0.5.min.js');
 	await injectScript('lib/libsignal-protocol-ee5b8ba.min.js');
 	await injectScript('lib/pako.js');
