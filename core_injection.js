@@ -10,6 +10,7 @@ async function injectOtherScripts() {
 	await injectScript('lib/pbf.3.0.5.min.js');
 	await injectScript('lib/libsignal-protocol-ee5b8ba.min.js');
 	await injectScript('lib/pako.js');
+	await injectScript('core/console_filter.js');
 	await injectScript('lib/wppconnect-wa.js');
 
 	await injectScript('core/parsing/binary_reader.js');

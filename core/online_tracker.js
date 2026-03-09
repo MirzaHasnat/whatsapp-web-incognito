@@ -350,19 +350,22 @@ function subscribeToPresence(jid) {
             }
         }
 
-        // 3. Try WPP Connect Fallbacks (Always try this as backup/supplement)
-        if (typeof WPP !== 'undefined' && WPP.chat) {
+        // 3. Try WPP Connect Fallbacks (Only use if primary method failed to avoid errors)
+        if (!subscribed && typeof WPP !== 'undefined' && WPP.chat) {
             // Trying to get the chat model often triggers a sync
             if (WPP.chat.get) {
                 try {
                     Promise.resolve(WPP.chat.get(jid)).catch((e) => {
-                        if (window.storeErrorLog) window.storeErrorLog("WPP.chat.get failed: " + (e ? e.message : "unknown"), jid);
+                        // Suppress known WPP errors
                     });
                 } catch (e) {
-                    if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
-                        console.error("[OnlineTracker] Error calling WPP.chat.get:", e);
+                    // Suppress known WPP WidFactory/internal errors to avoid console spam
+                    var msg = e.message || "";
+                    if (msg.includes("'m'") || msg.includes("WidFactory") || msg.includes("'get'")) {
+                        if (typeof WAdebugMode !== 'undefined' && WAdebugMode) console.log("[OnlineTracker] WPP.chat.get failed (internal):", e);
+                    } else {
+                        if (typeof WAdebugMode !== 'undefined' && WAdebugMode) console.error("[OnlineTracker] Error calling WPP.chat.get:", e);
                     }
-                    if (window.storeErrorLog) window.storeErrorLog("WPP.chat.get error: " + e.message, jid);
                 }
             }
 
@@ -504,13 +507,16 @@ function stopPresenceUpdates() {
 
 function sendPresenceUpdate(retryCount = 0) {
     try {
-        // Try using WPPConnect first (more stable API)
         if (typeof WPP !== 'undefined' && WPP.chat && WPP.chat.sendPresence) {
-            WPP.chat.sendPresence('available');
-            if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
-                console.log("[Stay Online] Sent presence update via WPP");
+            try {
+                WPP.chat.sendPresence('available');
+                if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
+                    console.log("[Stay Online] Sent presence update via WPP");
+                }
+                return;
+            } catch (e) {
+                if (typeof WAdebugMode !== 'undefined' && WAdebugMode) console.warn("[Stay Online] WPP sendPresence failed:", e);
             }
-            return;
         }
 
         // Fallback to internal WhatsApp API
@@ -522,13 +528,13 @@ function sendPresenceUpdate(retryCount = 0) {
                 console.log("[Stay Online] Sent presence update via WhatsAppAPI");
             }
         } else {
-            if (retryCount < 5) {
+            if (retryCount < 3) {
                 // Retry a few times if API is not yet ready
                 setTimeout(function () {
                     sendPresenceUpdate(retryCount + 1);
-                }, 2000);
-            } else {
-                console.warn("[Stay Online] WhatsApp API not available for presence updates after retries.");
+                }, 5000);
+            } else if (retryCount === 3) {
+                console.info("[Stay Online] WhatsApp API not available for presence updates yet. Will keep trying in background.");
             }
         }
     } catch (error) {

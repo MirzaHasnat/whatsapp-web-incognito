@@ -614,18 +614,24 @@ window.showWhatsAppActivityLogs = function () {
                 // 1. Try WPP (Most reliable if available)
                 if (typeof WPP !== 'undefined' && WPP.chat && WPP.chat.list) {
                     try {
-                        var wppChats = await WPP.chat.list();
-                        if (wppChats && wppChats.length > 0) {
-                            allChats = wppChats.map(c => ({
-                                jid: c.id._serialized || c.id,
-                                name: (c.contact && (c.contact.name || c.contact.pushname)) || c.name || c.formattedTitle || c.id._serialized || c.id
-                            }));
-                            found = true;
-                            if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
-                                console.log("[Exclusions] Loaded chats via WPP:", allChats.length);
+                        // Check if WPP is actually ready to avoid module errors
+                        if (WPP.webpack && WPP.webpack.isReady) {
+                            var wppChats = await WPP.chat.list();
+                            if (wppChats && wppChats.length > 0) {
+                                allChats = wppChats.map(c => ({
+                                    jid: c.id._serialized || c.id,
+                                    name: (c.contact && (c.contact.name || c.contact.pushname)) || c.name || c.formattedTitle || c.id._serialized || c.id
+                                }));
+                                found = true;
+                                if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
+                                    console.log("[Exclusions] Loaded chats via WPP:", allChats.length);
+                                }
                             }
                         }
-                    } catch (e) { console.error("WPP chat list failed", e); }
+                    } catch (e) {
+                        // WPP might throw a lot of internal errors if modules aren't found, suppress them
+                        if (typeof WAdebugMode !== 'undefined' && WAdebugMode) console.error("WPP chat list failed:", e);
+                    }
                 }
 
                 // 2. Try internal getAllChatsSimple (if WPP failed)
