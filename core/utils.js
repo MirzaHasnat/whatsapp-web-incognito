@@ -169,25 +169,43 @@ function isChatBlocked(jid)
 
 async function getChatByJID(jid)
 {
-    if (jid == undefined) debugger;
-    jid = normalizeJID(jid);
+    if (jid == undefined) {
+        console.warn("WhatsIncognito: getChatByJID called with undefined jid");
+        return null;
+    }
 
-    if (window.WhatsAppAPI && WhatsAppAPI.Store && WhatsAppAPI.ChatCollection && WhatsAppAPI.ChatCollection.find)
+    // Generate all JID format variants to try
+    // WhatsApp uses different formats in different contexts:
+    //   @c.us  — legacy/normalized format used by ChatCollection
+    //   @s.whatsapp.net — multi-device wire protocol format
+    //   @g.us  — group chats (unchanged between formats)
+    var jidVariants = getJIDVariants(jid);
+
+    if (window.WhatsAppAPI && WhatsAppAPI.ChatCollection && WhatsAppAPI.ChatCollection.find)
     {
-        try
-        {
-            var chat = await WhatsAppAPI.ChatCollection.find(jid);
-            return chat;
-        }
-        catch (e)
-        {
-            // fallback to old method
+        for (var v = 0; v < jidVariants.length; v++) {
+            try
+            {
+                var chat = await WhatsAppAPI.ChatCollection.find(jidVariants[v]);
+                if (chat) return chat;
+            }
+            catch (e) { /* try next variant */ }
         }
     }
 
-    // try to get it thorugh GUI
+    // Also try ChatStore via WPP if available
+    if (window.WPP && window.WPP.whatsapp && window.WPP.whatsapp.ChatStore) {
+        for (var v = 0; v < jidVariants.length; v++) {
+            try {
+                var chatModel = window.WPP.whatsapp.ChatStore.get(jidVariants[v]);
+                if (chatModel) return chatModel;
+            } catch(e) { /* try next */ }
+        }
+    }
+
+    // Fallback: try to find through GUI (only works if chat is visible in sidebar)
     var chatElem = findChatEntryElementForJID(jid);
-    var chat = null; // Declare chat variable
+    var chat = null;
     if (chatElem != null)
     {
         var data = FindReact(chatElem).props.data;
@@ -202,16 +220,34 @@ async function getChatByJID(jid)
     return chat;
 }
 
+// Returns all possible JID string variants for a given JID
+function getJIDVariants(jid)
+{
+    var jidStr = typeof jid === 'object' ? jid.toString() : String(jid);
+    var prefix = jidStr.split('@')[0].split(':')[0];
+    var suffix = jidStr.split('@')[1] || '';
+
+    // Groups only have one variant
+    if (suffix === 'g.us') return [prefix + '@g.us'];
+
+    // Individual chats: try both @c.us and @s.whatsapp.net
+    return [
+        prefix + '@c.us',
+        prefix + '@s.whatsapp.net',
+        jidStr  // original as-is (last resort)
+    ];
+}
+
 function normalizeJID(jid)
 {
     // Ensure jid is a string
     var jidString = typeof jid === 'object' ? jid.toString() : jid;
     
     if (jidString.includes("@s.whatsapp.net")) jidString = jidString.replace("@s.whatsapp.net", "@c.us");
-    var suffix = jidString.split("@")[1];
+    var suffix = jidString.split("@")[1] || '';
     var prefix = jidString.split("@")[0].split(":")[0];
 
-    return prefix + "@" + suffix;
+    return suffix ? prefix + "@" + suffix : prefix;
 }
 
 const arrayBufferToBase64 = (buffer) =>
@@ -385,7 +421,7 @@ function FindReact(dom, traverseUp = 0)
 
     if (reactElement == null)
     {
-        debugger;
+        // debugger; // removed
     }
 
     return reactElement;
@@ -456,7 +492,7 @@ function isEqualArray(a, b)
 
 async function gzipInflate(buffer) 
 {
-    return toArrayBuffer(pako.inflate(new Uint8Array(buffer)));
+    return toArrayBuffer((window.pako || pako).inflate(new Uint8Array(buffer)));
 }
 
 function deepClone(object)

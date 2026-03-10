@@ -88,7 +88,7 @@ MultiDevice.decryptNoisePacket = async function(payload, isIncoming = true)
             if (flags & 2)
             {
                 // zlib compressed. decompress
-                decryptedFrameOpened = toArrayBuffer(pako.inflate(new Uint8Array(decryptedFrameOpened)));
+                decryptedFrameOpened = toArrayBuffer((window.pako || pako).inflate(new Uint8Array(decryptedFrameOpened)));
             }
     
             frames[i] = {frame: decryptedFrameOpened, counter: counter, frameUncompressed: decryptedFrame};  
@@ -106,13 +106,12 @@ MultiDevice.decryptNoisePacket = async function(payload, isIncoming = true)
 
             throw ("Couldn't decrypt Noise packet: wrong counter (" + counter + ") in decryption, isIncoming: " + isIncoming);
         }
-        else
-        {
-            console.error("Could not decrypt Noise packet");
-            console.error(exception);
-            debugger;
-            throw exception;
-        }
+            else
+            {
+                console.error("Could not decrypt Noise packet");
+                console.error(exception);
+                throw exception;
+            }
     }
 
     return frames;

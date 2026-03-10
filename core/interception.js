@@ -1239,7 +1239,7 @@ wsHook.before = function (originalData, url) {
 
             var looksEqual = isEqualArray(new Uint8Array(originalData), new Uint8Array(packedNode));
             if (!looksEqual && isAllowed) {
-                debugger;
+                // debugger; // removed — pauses execution if DevTools is open
             }
 
             if (isInitializing) {
@@ -1348,7 +1348,7 @@ wsHook.after = function (messageEvent, url) {
             console.error(exception);
             console.error("incoming noise packet was:");
             console.error(originalData);
-            debugger;
+            // debugger; // removed — pauses execution if DevTools is open
             return messageEvent;
         };
 
@@ -1363,34 +1363,174 @@ function onDeletionMessageBlocked(message, remoteJid, messageId, deletedMessageI
     // In case the message already appears on screen, mark it in red
     var messageNode = document.querySelector("[data-id*='" + deletedMessageId + "']");
     if (messageNode) {
-        messageNode.setAttribute("deleted-message", "true");     // mark the message in red
+        messageNode.setAttribute("deleted-message", "true");
     }
 
-    document.dispatchEvent(new CustomEvent("pseudoMsgs", {
-        detail: deletedMessageId
-    }));
+    document.dispatchEvent(new CustomEvent("pseudoMsgs", { detail: deletedMessageId }));
 
-    // Now, save the deleted message in the DB after a short wait
+    // The authoritative chat JID is in protocolMessage.key.remoteJid
+    var chatJid = (message.protocolMessage && message.protocolMessage.key && message.protocolMessage.key.remoteJid)
+        ? message.protocolMessage.key.remoteJid.toString()
+        : remoteJid;
+
+    console.log("WhatsIncognito: Intercepted deleted message. chatJid:", chatJid, "msgId:", deletedMessageId);
+
     var waitTime = window.WhatsAppAPI != undefined ? 100 : 5000;
     setTimeout(async function () {
-        var chat = await getChatByJID(remoteJid);
+
+        // Step 1: Try to find the specific chat
+        var chat = null;
+        try {
+            if (chatJid && chatJid.endsWith('@lid')) {
+                chat = await resolveLidToChat(chatJid);
+            } else if (chatJid) {
+                chat = await getChatByJID(chatJid);
+            }
+        } catch(e) { /* ignore — we have fallbacks */ }
+
+        // Step 2: Search that chat's messages for the deleted one
         if (chat) {
-            if (chat.loadEarlierMsgs)
-                await chat.loadEarlierMsgs();
-            else
-                await WhatsAppAPI.LoadEarlierMessages.loadEarlierMsgs(chat);
+            try {
+                if (chat.loadEarlierMsgs) await chat.loadEarlierMsgs();
+                else if (window.WhatsAppAPI && WhatsAppAPI.LoadEarlierMessages)
+                    await WhatsAppAPI.LoadEarlierMessages.loadEarlierMsgs(chat);
+            } catch(e) {}
 
-            var msgs = chat.msgs.getModelsArray();
-
-            for (let i = 0; i < msgs.length; i++) {
+            var msgs = chat.msgs ? chat.msgs.getModelsArray() : [];
+            for (var i = 0; i < msgs.length; i++) {
                 if (msgs[i].id.id == deletedMessageId) {
+                    console.log("WhatsIncognito: Found message in target chat, saving.");
                     saveDeletedMessage(msgs[i], message.protocolMessage.key, messageId);
-                    break;
+                    return; // done
                 }
             }
+            console.warn("WhatsIncognito: Message not in target chat msgs, searching all chats...");
+        } else {
+            console.warn("WhatsIncognito: Could not find target chat for", chatJid, "— searching all chats...");
         }
+
+        // Step 3: FALLBACK — search ALL loaded chats for the message by ID.
+        // This handles @lid and any other case where direct chat lookup failed.
+        try {
+            var allChats = [];
+            if (window.WhatsAppAPI && WhatsAppAPI.ChatCollection) {
+                allChats = WhatsAppAPI.ChatCollection.getAll
+                    ? WhatsAppAPI.ChatCollection.getAll()
+                    : (WhatsAppAPI.ChatCollection.models || []);
+            } else if (window.WPP && window.WPP.whatsapp && window.WPP.whatsapp.ChatStore) {
+                allChats = window.WPP.whatsapp.ChatStore.getAll
+                    ? window.WPP.whatsapp.ChatStore.getAll()
+                    : (window.WPP.whatsapp.ChatStore.models || []);
+            }
+
+            for (var c = 0; c < allChats.length; c++) {
+                var candidateChat = allChats[c];
+                if (!candidateChat.msgs) continue;
+                var msgs = candidateChat.msgs.getModelsArray ? candidateChat.msgs.getModelsArray() : [];
+                for (var i = 0; i < msgs.length; i++) {
+                    if (msgs[i].id.id == deletedMessageId) {
+                        console.log("WhatsIncognito: Found message in chat", c, "via full scan, saving.");
+                        saveDeletedMessage(msgs[i], message.protocolMessage.key, messageId);
+                        return; // done
+                    }
+                }
+            }
+        } catch(e) {
+            console.error("WhatsIncognito: Error during full chat scan:", e);
+        }
+
+        console.warn("WhatsIncognito: Could not find message", deletedMessageId, "in any loaded chat. It may have been too old.");
+
     }, waitTime);
 }
+
+
+/**
+ * Resolve a @lid JID to a WhatsApp chat model.
+ * @lid is WhatsApp's "Linked Device ID" — a privacy-preserving anonymous
+ * identifier used in the multi-device protocol instead of phone numbers.
+ * It cannot be looked up directly; we must search chats by LID match.
+ */
+async function resolveLidToChat(lidJid) {
+    var lidNum = lidJid.split('@')[0].split(':')[0];
+
+    // Strategy 1: Try direct ChatCollection lookup  (works in some WA versions)
+    if (window.WhatsAppAPI && WhatsAppAPI.ChatCollection && WhatsAppAPI.ChatCollection.find) {
+        try {
+            var chat = await WhatsAppAPI.ChatCollection.find(lidJid);
+            if (chat) { console.log("WhatsIncognito: Resolved @lid via direct find:", lidJid); return chat; }
+        } catch(e) {}
+
+        // Strategy 2: Scan ChatCollection for a chat whose contact LID matches
+        try {
+            var allChats = WhatsAppAPI.ChatCollection.getAll ? WhatsAppAPI.ChatCollection.getAll()
+                         : WhatsAppAPI.ChatCollection.models || [];
+            for (var i = 0; i < allChats.length; i++) {
+                var c = allChats[i];
+                // Check contact.lid or id.lid
+                var contactLid = (c.contact && c.contact.lid) ? c.contact.lid.toString() : null;
+                var chatLid    = (c.id && c.id.lid)           ? c.id.lid.toString()       : null;
+                var lidAlt     = contactLid || chatLid || '';
+
+                if (lidAlt.includes(lidNum)) {
+                    console.log("WhatsIncognito: Resolved @lid via ChatCollection scan:", lidJid, "→", c.id ? c.id.toString() : '?');
+                    return c;
+                }
+            }
+        } catch(e) {}
+    }
+
+    // Strategy 3: WPP ChatStore scan
+    if (window.WPP && window.WPP.whatsapp && window.WPP.whatsapp.ChatStore) {
+        try {
+            // Try direct get first
+            var chatModel = window.WPP.whatsapp.ChatStore.get(lidJid);
+            if (chatModel) return chatModel;
+
+            // Scan all chats
+            var allWppChats = window.WPP.whatsapp.ChatStore.getAll
+                ? window.WPP.whatsapp.ChatStore.getAll()
+                : (window.WPP.whatsapp.ChatStore.models || []);
+            for (var i = 0; i < allWppChats.length; i++) {
+                var wc = allWppChats[i];
+                var wcLid = (wc.contact && wc.contact.lid) ? wc.contact.lid.toString() : '';
+                if (wcLid.includes(lidNum)) {
+                    console.log("WhatsIncognito: Resolved @lid via WPP.ChatStore scan:", lidJid, "→", wc.id ? wc.id.toString() : '?');
+                    return wc;
+                }
+            }
+        } catch(e) {}
+    }
+
+    // Strategy 4: If all else fails, try WPP.contact to map LID → phone number → chat
+    if (window.WPP && window.WPP.whatsapp && window.WPP.whatsapp.ContactStore) {
+        try {
+            var allContacts = window.WPP.whatsapp.ContactStore.getAll
+                ? window.WPP.whatsapp.ContactStore.getAll()
+                : (window.WPP.whatsapp.ContactStore.models || []);
+            for (var i = 0; i < allContacts.length; i++) {
+                var contact = allContacts[i];
+                var cLid = contact.lid ? contact.lid.toString() : '';
+                if (cLid.includes(lidNum)) {
+                    // Found matching contact — get the chat via their phone JID
+                    var phoneJid = contact.id ? contact.id.toString() : null;
+                    if (phoneJid) {
+                        var resolvedChat = await getChatByJID(phoneJid);
+                        if (resolvedChat) {
+                            console.log("WhatsIncognito: Resolved @lid via ContactStore scan:", lidJid, "→", phoneJid);
+                            return resolvedChat;
+                        }
+                    }
+                }
+            }
+        } catch(e) {}
+    }
+
+    console.warn("WhatsIncognito: Failed to resolve @lid:", lidJid);
+    return null;
+}
+
+
 
 async function decryptE2EMessagesFromNode(node) {
     // decrypt the signal message
@@ -1400,7 +1540,7 @@ async function decryptE2EMessagesFromNode(node) {
     catch (exception) {
         console.error("Could not decrypt E2E message with type " + node.attrs["type"] + " due to exception:");
         console.error(exception);
-        debugger;
+        // debugger; // removed — pauses execution if DevTools is open
     }
 }
 
@@ -1713,7 +1853,7 @@ function hookLogs() {
     });
 
     function hookedPromiseError(event) {
-        debugger;
+        // debugger; // removed — pauses execution if DevTools is open
         console.error("Unhandled promise rejection:");
         console.error(errorObject);
         return originalOnUnhandledRejection.call(event);
@@ -1748,7 +1888,6 @@ function initializeDeletedMessagesDB() {
     deletedDBOpenRequest.onupgradeneeded = function (event) {
         // triggers if the client had no database
         // ...perform initialization...
-        debugger;
 
         // Get a reference to the request related to this event
         // @type IDBOpenRequest (a specialized type of IDBRequest)
@@ -1786,47 +1925,57 @@ function initializeDeletedMessagesDB() {
 }
 
 async function saveDeletedMessage(retrievedMsg, deletedMessageKey, revokeMessageID) {
-    // Determine author data
-    let author = deletedMessageKey.participant.split("@")[0].split(":")[0]
+    // Store raw JIDs as-is — do NOT try to resolve @lid here.
+    // LID resolution is unreliable at intercept time and causes saving to fail entirely.
+    // Name/JID resolution happens lazily in the popup using WPP which is fully loaded by then.
+    let rawRemoteJid  = deletedMessageKey.remoteJid  ? deletedMessageKey.remoteJid.toString()  : "";
+    let participantRaw = deletedMessageKey.participant ? deletedMessageKey.participant.toString() : rawRemoteJid;
+    let authorJid = participantRaw;
+    let author    = authorJid.split("@")[0].split(":")[0]; // raw number / lid-number
 
     let body = "";
     let isMedia = false;
 
-    // Stickers & Documents are not considered media for some reason, so we have to check if it has a mediaKey and also set isMedia == true
+    // Stickers & Documents are not considered media, but we still check mediaKey
     if (retrievedMsg.isMedia || retrievedMsg.mediaKey) {
         isMedia = true;
-
-        // get extended media key              
         try {
             const decryptedData = await WhatsAppAPI.downloadManager.downloadAndMaybeDecrypt({
                 directPath: retrievedMsg.directPath,
-                encFilehash: retrievedMsg.encFilehash, filehash: retrievedMsg.filehash, mediaKey: retrievedMsg.mediaKey,
+                encFilehash: retrievedMsg.encFilehash, filehash: retrievedMsg.filehash,
+                mediaKey: retrievedMsg.mediaKey,
                 type: retrievedMsg.type, signal: (new AbortController).signal
             });
-
             body = arrayBufferToBase64(decryptedData);
-
         }
-        catch (e) { console.error(e); }
+        catch (e) { console.error("WhatsIncognito: media download failed", e); }
     }
     else {
         body = retrievedMsg.body;
     }
 
-    let deletedMsgContents = {}
-    deletedMsgContents.id = revokeMessageID;
+    let deletedMsgContents = {};
+    deletedMsgContents.id         = revokeMessageID;
     deletedMsgContents.originalID = retrievedMsg.id.id;
-    deletedMsgContents.body = body;
-    deletedMsgContents.timestamp = retrievedMsg.t;
-    deletedMsgContents.from = author;
-    deletedMsgContents.isMedia = isMedia;
-    deletedMsgContents.fileName = retrievedMsg.filename;
-    deletedMsgContents.mimetype = retrievedMsg.mimetype;
-    deletedMsgContents.type = retrievedMsg.type;
-    deletedMsgContents.mediaText = retrievedMsg.text;
-    deletedMsgContents.Jid = deletedMessageKey.remoteJid;
-    deletedMsgContents.lng = retrievedMsg.lng;
-    deletedMsgContents.lat = retrievedMsg.lat;
+    deletedMsgContents.body       = body;
+    deletedMsgContents.timestamp  = retrievedMsg.t;
+    deletedMsgContents.from       = author;       // raw number/LID part
+    deletedMsgContents.fromName   = "";           // resolved at display time
+    deletedMsgContents.fromJid    = authorJid;    // full raw JID (may be @lid)
+    deletedMsgContents.isMedia    = isMedia;
+    deletedMsgContents.fileName   = retrievedMsg.filename;
+    deletedMsgContents.mimetype   = retrievedMsg.mimetype;
+    deletedMsgContents.type       = retrievedMsg.type;
+    deletedMsgContents.mediaText  = retrievedMsg.text;
+    deletedMsgContents.Jid        = rawRemoteJid; // raw JID (may be @lid) — resolved at display time
+    deletedMsgContents.chatName   = "";           // resolved at display time
+    deletedMsgContents.lng        = retrievedMsg.lng;
+    deletedMsgContents.lat        = retrievedMsg.lat;
+
+    if (!window.deletedMessagesDB) {
+        console.error("WhatsIncognito: deletedMessagesDB is not initialized. Cannot save deleted message.");
+        return;
+    }
 
     if ("id" in deletedMsgContents) {
         const transcation = window.deletedMessagesDB.transaction('msgs', "readwrite");
@@ -1835,15 +1984,17 @@ async function saveDeletedMessage(retrievedMsg, deletedMessageKey, revokeMessage
             if (request.error.name == "ConstraintError") {
                 // ConstraintError occurs when an object with the same id already exists
                 // This will happen when we get the revoke message again from the server
-                console.log("WhatsIncognito: Not saving message becuase the message ID already exists");
+                console.log("WhatsIncognito: Not saving message because the message ID already exists");
             }
             else {
-                console.log("WhatsIncognito: Unexpected error saving deleted message");
+                console.error("WhatsIncognito: Unexpected error saving deleted message", request.error);
             }
         };
         request.onsuccess = (e) => {
             console.log("WhatsIncognito: Saved deleted message with ID " + deletedMsgContents.id + " from " + deletedMsgContents.from + " successfully.");
-        }
+            // Notify the UI that a new deleted message has been saved
+            document.dispatchEvent(new CustomEvent("onDeletedMessageSaved", { detail: { id: deletedMsgContents.id } }));
+        };
     }
     else {
         console.log("WhatsIncognito: Deleted message contents not found");
@@ -1864,7 +2015,7 @@ async function checkNodeEncoderSanity(originalFrame, isIncoming = false) {
     var encodedNodeData = await nodeReaderWriter.encodeStanza(realNode, isIncoming);
     var looksGood = isEqualArray(new Uint8Array(decryptedFrameOpened), encodedNodeData.slice(1));
     if (!looksGood && !isIncoming) {
-        debugger;
+        // debugger; // removed — pauses execution if DevTools is open
     }
     if (!looksGood && isIncoming) {
         // This can sometimes hit because on the encoding path, strings that represent numbers are always encoded with NIBBLE_8 (255) encoding.
