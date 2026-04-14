@@ -11,7 +11,6 @@ async function injectOtherScripts() {
 	await injectScript('lib/libsignal-protocol-ee5b8ba.min.js');
 	await injectScript('lib/pako.js');
 	await injectScript('core/console_filter.js');
-	await injectScript('lib/wppconnect-wa.js');
 
 	await injectScript('core/parsing/binary_reader.js');
 	await injectScript('core/parsing/binary_writer.js');
@@ -33,8 +32,11 @@ async function injectOtherScripts() {
 	await injectScript('core/node_handler.js');
 
 	setTimeout(
-		function () { injectScript('lib/moduleraid.js'); },
-		10);
+		function () { 
+			injectScript('lib/moduleraid.js'); 
+			injectScript('lib/wppconnect-wa.js');
+		},
+		500);
 }
 
 function injectScript(scriptName) {

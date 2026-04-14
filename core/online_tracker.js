@@ -2,6 +2,8 @@
 // Online Presence Tracking Logic
 // -----------------------------------------------------------------------------
 
+if (typeof WPP === 'undefined') var WPP = window.WPP;
+
 var onlineTrackerEnabled = true;
 var stayOnlineEnabled = false;
 var stayOnlineInterval = null;
@@ -15,7 +17,6 @@ window.OnlineTracker = {
     addTrackedUser: addTrackedUser,
     removeTrackedUser: removeTrackedUser,
     isTrackedUser: isTrackedUser,
-    subscribeToPresence: subscribeToPresence,
     subscribeToPresence: subscribeToPresence,
     getSessionsFromLogs: getSessionsFromLogs,
     getSystemGaps: getSystemGaps
@@ -328,7 +329,7 @@ function addTrackedUser(jid) {
     }
 }
 
-function subscribeToPresence(jid) {
+async function subscribeToPresence(jid) {
     try {
         var subscribed = false;
 
@@ -341,7 +342,22 @@ function subscribeToPresence(jid) {
             }
         }
 
-        // 2. Try internal WhatsAppAPI Communication
+        // 2. Try WPP.presence.subscribe (More reliable alternative)
+        if (!subscribed && typeof WPP !== 'undefined' && WPP.presence && typeof WPP.presence.subscribe === 'function') {
+            try {
+                await WPP.presence.subscribe(jid);
+                subscribed = true;
+                if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
+                    console.log("[OnlineTracker] Subscribed using WPP.presence for:", jid);
+                }
+            } catch (e) {
+                if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
+                    console.log("[OnlineTracker] WPP.presence.subscribe error:", jid, e.message);
+                }
+            }
+        }
+
+        // 3. Try internal WhatsAppAPI Communication
         if (!subscribed && window.WhatsAppAPI && window.WhatsAppAPI.Communication && window.WhatsAppAPI.Communication.subscribePresence) {
             window.WhatsAppAPI.Communication.subscribePresence(jid);
             subscribed = true;
@@ -350,47 +366,59 @@ function subscribeToPresence(jid) {
             }
         }
 
-        // 3. Try WPP Connect Fallbacks (Only use if primary method failed to avoid errors)
-        if (!subscribed && typeof WPP !== 'undefined' && WPP.chat) {
-            // Trying to get the chat model often triggers a sync
-            if (WPP.chat.get) {
-                try {
-                    Promise.resolve(WPP.chat.get(jid)).catch((e) => {
-                        // Suppress known WPP errors
-                    });
-                } catch (e) {
-                    // Suppress known WPP WidFactory/internal errors to avoid console spam
-                    var msg = e.message || "";
-                    if (msg.includes("'m'") || msg.includes("WidFactory") || msg.includes("'get'")) {
-                        if (typeof WAdebugMode !== 'undefined' && WAdebugMode) console.log("[OnlineTracker] WPP.chat.get failed (internal):", e);
-                    } else {
-                        if (typeof WAdebugMode !== 'undefined' && WAdebugMode) console.error("[OnlineTracker] Error calling WPP.chat.get:", e);
-                    }
+        // 4. Try internal WPP.contact.subscribePresence if available
+        if (!subscribed && typeof WPP !== 'undefined' && WPP.contact && typeof WPP.contact.subscribePresence === 'function') {
+            try {
+                await WPP.contact.subscribePresence(jid);
+                subscribed = true;
+                if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
+                    console.log("[OnlineTracker] Subscribed using WPP.contact.subscribePresence for:", jid);
                 }
-            }
-
-            // Explicitly query last seen if available - this forces a presence check
-            if (WPP.chat.getLastSeen) {
-                try {
-                    WPP.chat.getLastSeen(jid).then(ls => {
-                        // This is just to trigger the request, we don't necessarily use the result here
-                        // as the main tracker logic listens to the 'presence' node updates.
-                    }).catch((e) => {
-                        if (window.storeErrorLog) window.storeErrorLog("WPP.chat.getLastSeen failed", jid);
-                    });
-                } catch (e) {
-                    if (window.storeErrorLog) window.storeErrorLog("WPP.chat.getLastSeen error: " + e.message, jid);
+            } catch (e) {
+                if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
+                    console.log("[OnlineTracker] WPP.contact.subscribePresence error:", jid, e.message);
                 }
-            }
-
-            if (!subscribed && typeof WAdebugMode !== 'undefined' && WAdebugMode) {
-                console.log("[OnlineTracker] Attempted WPP presence trigger for:", jid);
             }
         }
 
-        // Report if no subscription method worked (and wasn't just a WPP trigger)
-        if (!subscribed && (!window.Store || !window.Store.Presence)) {
-            if (window.storeErrorLog) window.storeErrorLog("Failed to subscribe: Store.Presence missing", jid);
+        // 5. Try WPP.whatsapp.PresenceStore.subscribe — the PresenceStore is exposed via
+        //    WPP's whatsapp namespace (same pattern as WPP.whatsapp.ChatStore used elsewhere)
+        if (!subscribed && typeof WPP !== 'undefined' && WPP.whatsapp) {
+            var presenceStore = WPP.whatsapp.PresenceStore;
+            if (presenceStore && typeof presenceStore.subscribe === 'function') {
+                try {
+                    // Build a proper WID if WPP.whatsapp.Wid factory is available
+                    var wid = jid;
+                    if (WPP.whatsapp.WidFactory && typeof WPP.whatsapp.WidFactory.createWid === 'function') {
+                        try { wid = WPP.whatsapp.WidFactory.createWid(jid); } catch (e) { /* use raw string */ }
+                    }
+                    presenceStore.subscribe(wid);
+                    subscribed = true;
+                    if (typeof WAdebugMode !== 'undefined' && WAdebugMode) console.log("[OnlineTracker] Subscribed using WPP.whatsapp.PresenceStore for:", jid);
+                } catch (e) {
+                    if (typeof WAdebugMode !== 'undefined' && WAdebugMode) console.log("[OnlineTracker] WPP.whatsapp.PresenceStore.subscribe error (ignored):", jid, e.message);
+                }
+            }
+        }
+
+        // 6. Last resort: try window.Store.Presence from WhatsApp's own global Store
+        //    (may be available on some WA Web versions as window.Store)
+        if (!subscribed) {
+            var waStore = (typeof Store !== 'undefined' && Store) || (window.WhatsAppAPI && window.WhatsAppAPI.Store);
+            if (waStore && waStore.Presence && typeof waStore.Presence.subscribe === 'function') {
+                try {
+                    waStore.Presence.subscribe(jid);
+                    subscribed = true;
+                    if (typeof WAdebugMode !== 'undefined' && WAdebugMode) console.log("[OnlineTracker] Subscribed using Store.Presence (global) for:", jid);
+                } catch (e) {
+                    if (typeof WAdebugMode !== 'undefined' && WAdebugMode) console.log("[OnlineTracker] Store.Presence.subscribe error (ignored):", jid, e.message);
+                }
+            }
+        }
+
+        // Report if no subscription method worked at all
+        if (!subscribed) {
+            if (typeof WAdebugMode !== 'undefined' && WAdebugMode) console.log("[OnlineTracker] No subscription method available for:", jid);
         }
 
     } catch (e) {

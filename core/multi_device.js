@@ -4,6 +4,12 @@
 
 var MultiDevice = {};
 
+// Safety checks for global libraries
+var getPbf = function() { return window.Pbf || (typeof Pbf !== 'undefined' ? Pbf : null); };
+var getPako = function() { return window.pako || (typeof pako !== 'undefined' ? pako : null); };
+var getLibsignal = function() { return window.libsignal || (typeof libsignal !== 'undefined' ? libsignal : null); };
+
+
 var originalImportKey = crypto.subtle.importKey;
 
 MultiDevice.initialize = function()
@@ -88,7 +94,15 @@ MultiDevice.decryptNoisePacket = async function(payload, isIncoming = true)
             if (flags & 2)
             {
                 // zlib compressed. decompress
-                decryptedFrameOpened = toArrayBuffer((window.pako || pako).inflate(new Uint8Array(decryptedFrameOpened)));
+                var pakoInstance = getPako();
+                if (pakoInstance)
+                {
+                    decryptedFrameOpened = toArrayBuffer(pakoInstance.inflate(new Uint8Array(decryptedFrameOpened)));
+                }
+                else
+                {
+                    console.error("WAIncognito: pako library is not loaded, cannot decompress frame.");
+                }
             }
     
             frames[i] = {frame: decryptedFrameOpened, counter: counter, frameUncompressed: decryptedFrame};  
@@ -244,7 +258,8 @@ MultiDevice.decryptE2EMessagesFromMessageNode = async function(messageNode)
         message = new Uint8Array(message);
         message = new Uint8Array(message.buffer, message.byteOffset, message.length - message[message.length - 1]);
     
-        var decryptedMessage = Message.read(new Pbf(message));
+        var pbfInstance = getPbf();
+        var decryptedMessage = Message.read(new pbfInstance(message));
         decryptedMessages.push(decryptedMessage);
 
         if (decryptedMessage.senderKeyDistributionMessage)
@@ -272,9 +287,10 @@ MultiDevice.signalDecryptWhisperMessage = async function(whisperMessageBuffer, s
         debugger;
     }
 
+    var pbfInstance = getPbf();
     var version = (new Uint8Array(whisperMessageBuffer))[0];
     var messageProto = whisperMessageBuffer.slice(1, whisperMessageBuffer.byteLength - 8);
-    var whisperMessage = WhisperMessage.read(new Pbf(messageProto));
+    var whisperMessage = WhisperMessage.read(new pbfInstance(messageProto));
 
     var chainKey = null; var chainCounter = -1; var messageKeys = {};
 
@@ -296,12 +312,13 @@ MultiDevice.signalDecryptWhisperMessage = async function(whisperMessageBuffer, s
         chainCounter = chainKeyData.counter;
     }
 
+    var libsignalInstance = getLibsignal();
     var messageKey = await MultiDevice.signalGetMessageKey(chainKey, chainCounter, whisperMessage.counter, messageKeys);
-    var keys = await libsignal.HKDF.deriveSecrets(messageKey, new ArrayBuffer(32), "WhisperMessageKeys");
+    var keys = await libsignalInstance.HKDF.deriveSecrets(messageKey, new ArrayBuffer(32), "WhisperMessageKeys");
 
     try
     {
-        var plaintext = await libsignal.crypto.decrypt(keys[0], toArrayBuffer(whisperMessage.ciphertext), keys[2].slice(0, 16));
+        var plaintext = await libsignalInstance.crypto.decrypt(keys[0], toArrayBuffer(whisperMessage.ciphertext), keys[2].slice(0, 16));
         return plaintext;
     }
     catch (exception)
@@ -320,9 +337,15 @@ MultiDevice.signalDecryptPrekeyWhisperMessage = async function(prekeyWhisperMess
     var lidAddress = WhatsAppAPI.WAWebSignalCommonUtils.createSignalAddress(widAddress, false);
     var sessionObject = await storage.loadSession(lidAddress);
 
+    var pbfInstance = getPbf();
+    if (!pbfInstance) {
+        console.error("WAIncognito: Pbf library is not loaded!");
+        throw new Error("Pbf library missing");
+    }
+
     var version = (new Uint8Array(prekeyWhisperMessageBuffer))[0];
     var messageProto = prekeyWhisperMessageBuffer.slice(1, prekeyWhisperMessageBuffer.byteLength);
-    var prekeyMessage = PreKeyWhisperMessage.read(new Pbf(messageProto));
+    var prekeyMessage = PreKeyWhisperMessage.read(new pbfInstance(messageProto));
 
     var ourIdentityKey = await storage.getIdentityKeyPair();
     var ourEphemeralKey = await storage.loadPreKey(prekeyMessage.preKeyId); // preKeyPair
@@ -330,7 +353,8 @@ MultiDevice.signalDecryptPrekeyWhisperMessage = async function(prekeyWhisperMess
 
     version = (new Uint8Array(prekeyMessage.message))[0];
     messageProto = prekeyMessage.message.slice(1, prekeyMessage.message.byteLength - 8);
-    var whisperMessage = WhisperMessage.read(new Pbf(messageProto));
+    var pbfInstance = getPbf();
+    var whisperMessage = WhisperMessage.read(new pbfInstance(messageProto));
 
     var chainKeyData = null;
     var isNewSession = false;
@@ -360,30 +384,30 @@ MultiDevice.signalDecryptPrekeyWhisperMessage = async function(prekeyWhisperMess
         }
     
         var ecRes = new Array();
-        ecRes[0] = await libsignal.Curve.async.calculateAgreement(prekeyMessage.baseKey, ourIdentityKey.privKey);
-        ecRes[1] = await libsignal.Curve.async.calculateAgreement(prekeyMessage.identityKey, ourSignedKey.privKey);
-        ecRes[2] = await libsignal.Curve.async.calculateAgreement(prekeyMessage.baseKey, ourSignedKey.privKey);
+        ecRes[0] = await getLibsignal().Curve.async.calculateAgreement(prekeyMessage.baseKey, ourIdentityKey.privKey);
+        ecRes[1] = await getLibsignal().Curve.async.calculateAgreement(prekeyMessage.identityKey, ourSignedKey.privKey);
+        ecRes[2] = await getLibsignal().Curve.async.calculateAgreement(prekeyMessage.baseKey, ourSignedKey.privKey);
         sharedSecret.set(new Uint8Array(ecRes[0]), 32 * 2); sharedSecret.set(new Uint8Array(ecRes[1]), 32); sharedSecret.set(new Uint8Array(ecRes[2]), 32 * 3);
         if (ourEphemeralKey !== undefined && prekeyMessage.baseKey !== undefined) {
-            var ecRes4 = await libsignal.Curve.async.calculateAgreement(prekeyMessage.baseKey, ourEphemeralKey.privKey);
+            var ecRes4 = await getLibsignal().Curve.async.calculateAgreement(prekeyMessage.baseKey, ourEphemeralKey.privKey);
             sharedSecret.set(new Uint8Array(ecRes4), 32 * 4);
         }
-        var masterKey = await libsignal.HKDF.deriveSecrets(sharedSecret.buffer, new ArrayBuffer(32), "WhisperText");
+        var masterKey = await getLibsignal().HKDF.deriveSecrets(sharedSecret.buffer, new ArrayBuffer(32), "WhisperText");
         var rootKey = masterKey[0];
     
         // calculate new ratchet
-        sharedSecret = await libsignal.Curve.async.calculateAgreement(whisperMessage.ephemeralKey, ourSignedKey.privKey);
-        var keys = await libsignal.HKDF.deriveSecrets(sharedSecret, rootKey, "WhisperRatchet");
+        sharedSecret = await getLibsignal().Curve.async.calculateAgreement(whisperMessage.ephemeralKey, ourSignedKey.privKey);
+        var keys = await getLibsignal().HKDF.deriveSecrets(sharedSecret, rootKey, "WhisperRatchet");
         var chainKey = keys[1];
 
         chainKeyData = {key: chainKey, counter: -1};
     }
 
     var messageKey = await MultiDevice.signalGetMessageKey(chainKeyData.key, chainKeyData.counter, whisperMessage.counter, messageKeys);
-    var keys = await libsignal.HKDF.deriveSecrets(messageKey, new ArrayBuffer(32), "WhisperMessageKeys");
+    var keys = await getLibsignal().HKDF.deriveSecrets(messageKey, new ArrayBuffer(32), "WhisperMessageKeys");
     try
     {
-        var plaintext = await libsignal.crypto.decrypt(keys[0], toArrayBuffer(whisperMessage.ciphertext), keys[2].slice(0, 16));
+        var plaintext = await getLibsignal().crypto.decrypt(keys[0], toArrayBuffer(whisperMessage.ciphertext), keys[2].slice(0, 16));
         return plaintext;
     }
     catch (exception)
@@ -404,9 +428,10 @@ MultiDevice.signalDecryptSenderKeyMessage = async function(senderKeyMessageBuffe
     var senderKeyName = `${groupId}::${widAdress}`; // createSignalLikeSenderKeyName
     var senderKey = await storage.loadSenderKey(senderKeyName);
 
+    var pbfInstance = getPbf();
     var version = new Uint8Array(senderKeyMessageBuffer)[0];
     var messageProto = senderKeyMessageBuffer.slice(1, senderKeyMessageBuffer.byteLength - 64);
-    var senderKeyMessage = SenderKeyMessage.read(new Pbf(messageProto));
+    var senderKeyMessage = SenderKeyMessage.read(new pbfInstance(messageProto));
     var id = senderKeyMessage.id;
     
     var chainKey = null; var chainMsgCounter = -1; var messageKeys = {};
@@ -439,20 +464,21 @@ MultiDevice.signalDecryptSenderKeyMessage = async function(senderKeyMessageBuffe
 
     var messageKey = await MultiDevice.signalGetMessageKey(chainKey, chainMsgCounter, senderKeyMessage.iteration, messageKeys, true);
             
-    var keys = await libsignal.HKDF.deriveSecrets(messageKey, new ArrayBuffer(32), "WhisperGroup");
+    var keys = await getLibsignal().HKDF.deriveSecrets(messageKey, new ArrayBuffer(32), "WhisperGroup");
     var key = new Uint8Array(32);
     key.set(new Uint8Array(keys[0].slice(16))); key.set(new Uint8Array(keys[1].slice(0, 16)), 16);
     var iv = keys[0].slice(0, 16);
-    var plaintext = await libsignal.crypto.decrypt(key.buffer, senderKeyMessage.ciphertext, iv);
+    var plaintext = await getLibsignal().crypto.decrypt(key.buffer, senderKeyMessage.ciphertext, iv);
     // plaintext makes sense? good.
     return plaintext;
 }
 
 MultiDevice.signalGetKeyDistributionMessage = function(keyDistributionMessageBuffer)
 {
+    var pbfInstance = getPbf();
     var version = new Uint8Array(keyDistributionMessageBuffer)[0];
     var messageProto = keyDistributionMessageBuffer.slice(1, keyDistributionMessageBuffer.byteLength);
-    var senderKeyMessage = WhisperSenderKeyDistributionMessage.read(new Pbf(messageProto));
+    var senderKeyMessage = WhisperSenderKeyDistributionMessage.read(new pbfInstance(messageProto));
 
     return senderKeyMessage;
 }
@@ -463,8 +489,8 @@ MultiDevice.calculateNewChainKey = async function(rootKey, ratchetPubKey, ratche
     if (!(ratchetPrivKey instanceof ArrayBuffer))
         ratchetPrivKey = toArrayBuffer(ratchetPrivKey);
 
-    var sharedSecret = await libsignal.Curve.async.calculateAgreement(ratchetPubKey, ratchetPrivKey);
-    var keys = await libsignal.HKDF.deriveSecrets(sharedSecret, rootKey, "WhisperRatchet");
+    var sharedSecret = await getLibsignal().Curve.async.calculateAgreement(ratchetPubKey, ratchetPrivKey);
+    var keys = await getLibsignal().HKDF.deriveSecrets(sharedSecret, rootKey, "WhisperRatchet");
 
     return {key: keys[1], counter: -1};
 }
@@ -552,7 +578,8 @@ MultiDevice.looksLikeHandshakePacket = function(payload)
     var binary = payload.slice(startOffset, payload.length);
     try
     {
-        handshakeMessage = HandshakeMessage.read(new Pbf(binary));
+        var pbfInstance = getPbf();
+        handshakeMessage = HandshakeMessage.read(new pbfInstance(binary));
     }
     catch
     {

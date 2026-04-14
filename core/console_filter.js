@@ -9,6 +9,7 @@
         "Property getHeader was not found",
         "Module MsgCollection was not found",
         "Module not found: function(e)",
+        "Module ChatStore was not found",
     ];
 
     function shouldSuppress(args) {
