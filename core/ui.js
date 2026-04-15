@@ -1,4 +1,4 @@
-﻿﻿/*
+/*
 This is a content script responsible for some UI.
 */
 
@@ -136,6 +136,7 @@ async function addIconIfNeeded() {
                 var pressedMenuItemClass = UIClassNames.MENU_ITEM_CLASS + " " + UIClassNames.MENU_ITEM_HIGHLIGHTED_CLASS + " active menu-item-incognito";
                 document.getElementsByClassName("menu-item-incognito")[0].setAttribute("class", pressedMenuItemClass);
 
+                // --- settings listeners ---
                 document.getElementById("incognito-option-read-confirmations").addEventListener("click", onReadConfirmaionsTick);
                 document.getElementById("incognito-option-online-status").addEventListener("click", onOnlineUpdatesTick);
                 document.getElementById("incognito-option-typing-status").addEventListener("click", onTypingUpdatesTick);
@@ -145,18 +146,79 @@ async function addIconIfNeeded() {
                 document.getElementById("incognito-option-status-downloading").addEventListener("click", onStatusDownloadingTick);
                 document.getElementById("incognito-option-typing-notifications").addEventListener("click", onTypingNotificationsTick);
                 document.getElementById("incognito-option-stay-online").addEventListener("click", onStayOnlineTick);
+                document.getElementById("incognito-option-status-archive").addEventListener("click", onStatusArchiveTick);
                 document.getElementById("incognito-option-online-tracker").addEventListener("click", onOnlineTrackerClick);
-                for (var nextButton of document.getElementsByClassName('incognito-next-button')) {
-                    nextButton.addEventListener("click", onNextButtonClicked);
-                };
-                for (var nextButton of document.getElementsByClassName('incognito-back-button')) {
-                    nextButton.addEventListener("click", onBackButtonClicked);
-                };
 
-                //document.getElementById("incognito-option-safety-delay").addEventListener("input", onSafetyDelayChanged);
-                //document.getElementById("incognito-option-safety-delay").addEventListener("keypress", isNumberKey);
-                //document.getElementById("incognito-radio-enable-safety-delay").addEventListener("click", onSafetyDelayEnabled);
-                //document.getElementById("incognito-radio-disable-safety-delay").addEventListener("click", onSafetyDelayDisabled);
+                // --- settings search ---
+                var settingsSearch = document.getElementById("incognito-settings-search");
+                if (settingsSearch) {
+                    settingsSearch.addEventListener("input", function () {
+                        var q = this.value.toLowerCase();
+                        var items = document.querySelectorAll(".incognito-options-item");
+                        items.forEach(function (item) {
+                            var text = item.textContent.toLowerCase();
+                            item.style.display = text.indexOf(q) !== -1 ? "" : "none";
+                        });
+                        // hide section headers if all items below them are hidden
+                        var headers = document.querySelectorAll(".incognito-section-header");
+                        headers.forEach(function (hdr) {
+                            var next = hdr.nextElementSibling;
+                            var anyVisible = false;
+                            while (next && !next.classList.contains("incognito-section-header")) {
+                                if (next.style.display !== "none") anyVisible = true;
+                                next = next.nextElementSibling;
+                            }
+                            hdr.style.display = anyVisible ? "" : "none";
+                        });
+                    });
+                    settingsSearch.addEventListener("click", function (e) { e.stopPropagation(); });
+                }
+
+                // --- tab switching ---
+                var tabSettings = document.getElementById("incognito-tab-settings");
+                var tabStatuses = document.getElementById("incognito-tab-statuses");
+                var panelSettings = document.getElementById("incognito-panel-settings");
+                var panelStatuses = document.getElementById("incognito-panel-statuses");
+
+                function switchTab(active) {
+                    if (active === 'settings') {
+                        tabSettings.style.borderBottom = "2px solid #128C7E";
+                        tabSettings.style.color = "#128C7E";
+                        tabSettings.style.fontWeight = "600";
+                        tabStatuses.style.borderBottom = "2px solid transparent";
+                        tabStatuses.style.color = "#667781";
+                        tabStatuses.style.fontWeight = "400";
+                        panelSettings.style.display = "block";
+                        panelStatuses.style.display = "none";
+                    } else {
+                        tabStatuses.style.borderBottom = "2px solid #128C7E";
+                        tabStatuses.style.color = "#128C7E";
+                        tabStatuses.style.fontWeight = "600";
+                        tabSettings.style.borderBottom = "2px solid transparent";
+                        tabSettings.style.color = "#667781";
+                        tabSettings.style.fontWeight = "400";
+                        panelStatuses.style.display = "block";
+                        panelSettings.style.display = "none";
+                        loadStatusesPanel();
+                    }
+                }
+
+                tabSettings.addEventListener("click", function () { switchTab('settings'); });
+                tabStatuses.addEventListener("click", function () { switchTab('statuses'); });
+
+                // --- statuses search ---
+                var statusSearch = document.getElementById("incognito-status-search");
+                if (statusSearch) {
+                    statusSearch.addEventListener("input", function () {
+                        var q = this.value.toLowerCase();
+                        var sections = document.querySelectorAll(".incognito-status-user-section");
+                        sections.forEach(function (sec) {
+                            var name = (sec.getAttribute("data-name") || "").toLowerCase();
+                            sec.style.display = name.indexOf(q) !== -1 ? "" : "none";
+                        });
+                    });
+                    statusSearch.addEventListener("click", function (e) { e.stopPropagation(); });
+                }
 
                 document.dispatchEvent(new CustomEvent('onIncognitoOptionsOpened', { detail: null }));
             });
@@ -168,17 +230,8 @@ async function addIconIfNeeded() {
                 document.getElementById("incognito-option-typing-status").removeEventListener("click", onTypingUpdatesTick);
                 document.getElementById("incognito-option-typing-notifications").removeEventListener("click", onTypingNotificationsTick);
                 document.getElementById("incognito-option-stay-online").removeEventListener("click", onStayOnlineTick);
+                document.getElementById("incognito-option-status-archive").removeEventListener("click", onStatusArchiveTick);
                 document.getElementById("incognito-option-online-tracker").removeEventListener("click", onOnlineTrackerClick);
-
-                for (var nextButton of document.getElementsByClassName('incognito-next-button')) {
-                    nextButton.removeEventListener("click", onNextButtonClicked);
-                };
-                for (var nextButton of document.getElementsByClassName('incognito-back-button')) {
-                    nextButton.removeEventListener("click", onBackButtonClicked);
-                };
-
-                //document.getElementById("incognito-radio-enable-safety-delay").removeEventListener("click", onSafetyDelayEnabled);
-                //document.getElementById("incognito-radio-disable-safety-delay").removeEventListener("click", onSafetyDelayDisabled);
             });
         });
     }
@@ -228,6 +281,9 @@ function generateDropContent(options) {
     var onlineTrackerTitle = "Online Tracker Logs";
     var onlineTrackerCaption = "View online/offline history.";
 
+    var statusArchiveTitle = "Archive Statuses";
+    var statusArchiveCaption = "Automatically save and view statuses";
+
     var readConfirmationCheckbox = (options.readConfirmationsHook ? "checked incognito-checked'> \
         <div class='checkmark incognito-mark incognito-marked'> </div>" :
         "unchecked " + "'> <div class='checkmark incognito-mark" + "'> </div>");
@@ -255,148 +311,265 @@ function generateDropContent(options) {
     var stayOnlineCheckbox = (options.stayOnline ? "checked incognito-checked'> \
         <div class='checkmark incognito-mark incognito-marked'> </div>" :
         "unchecked " + "'> <div class='checkmark incognito-mark" + "'> </div>");
+    var statusArchiveCheckbox = (options.statusArchive ? "checked incognito-checked'> \
+        <div class='checkmark incognito-mark incognito-marked'> </div>" :
+        "unchecked " + "'> <div class='checkmark incognito-mark" + "'> </div>");
 
 
-    var dropContent = ` \
-        <div class='incognito-options-container' dir='ltr'>
-            <div class='incognito-options-title'>Incognito options</div>
+    var dropContent = `
+        <style>
+            .incognito-panel-wrap { width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+            .incognito-tab-bar { display:flex; border-bottom:1px solid #e9edef; padding:0 12px; background:#f0f2f5; }
+            .incognito-tab { flex:1; padding:10px 4px 9px; text-align:center; font-size:13px; cursor:pointer; color:#667781; border-bottom:2px solid transparent; transition:all 0.15s; user-select:none; }
+            .incognito-search-wrap { padding:10px 12px 6px; background:#f0f2f5; border-bottom:1px solid #e9edef; }
+            .incognito-search-input { width:100%; box-sizing:border-box; padding:7px 10px; border:1px solid #d1d7db; border-radius:8px; font-size:13px; outline:none; background:#fff; color:#111b21; }
+            .incognito-search-input:focus { border-color:#128C7E; box-shadow:0 0 0 2px rgba(18,140,126,0.15); }
+            .incognito-panel { padding:8px 0 12px; overflow-y:auto; max-height:calc(80vh - 120px); }
+            .incognito-section-header { font-size:10px; font-weight:700; letter-spacing:0.07em; text-transform:uppercase; color:#667781; padding:10px 16px 4px; }
+            .incognito-options-item { display:flex; align-items:flex-start; gap:10px; padding:9px 16px; cursor:pointer; transition:background 0.12s; }
+            .incognito-options-item:hover { background:#f0f2f5; }
+            .incognito-options-item .checkbox-container-incognito { margin-top:1px; flex-shrink:0; }
+            .incognito-item-text { flex:1; }
+            .incognito-item-title { font-size:13px; color:#111b21; font-weight:500; }
+            .incognito-options-description { font-size:11px; color:#667781; margin-top:2px; line-height:1.3; }
+            .incognito-status-user-section { padding:8px 12px 10px; border-bottom:1px solid #f0f2f5; }
+            .incognito-status-user-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+            .incognito-status-avatar { width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,#7c3aed,#db2777); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:14px; flex-shrink:0; }
+            .incognito-status-name { font-size:13px; font-weight:600; color:#111b21; flex:1; }
+            .incognito-status-count { font-size:11px; color:#667781; }
+            .incognito-status-thumbs { display:flex; gap:6px; flex-wrap:wrap; }
+            .incognito-status-thumb { width:60px; height:60px; border-radius:8px; overflow:hidden; background:#ede9fe; flex-shrink:0; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+            .incognito-status-thumb img, .incognito-status-thumb video { width:100%; height:100%; object-fit:cover; display:block; }
+            .incognito-status-text-thumb { font-size:9px; color:#374151; padding:4px; text-align:center; word-break:break-word; background:linear-gradient(135deg,#ede9fe,#fce7f3); width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
+            .incognito-status-empty { text-align:center; padding:28px 16px; color:#667781; font-size:13px; }
+        </style>
+        <div class='incognito-panel-wrap' dir='ltr'>
+            <div style='padding:10px 12px 6px;background:#128C7E;'>
+                <div style='font-size:14px;font-weight:700;color:#fff;'>🥷 WAIncognito</div>
+            </div>
 
-            <div class='incognito-options-navigator'>
-                <div class='incognito-options-view-container' style='transform: translate(0%, 0%);' id='incognito-options-view1'>
+            <div class='incognito-tab-bar'>
+                <div class='incognito-tab' id='incognito-tab-settings' style='border-bottom:2px solid #128C7E;color:#128C7E;font-weight:600;'>⚙️ Settings</div>
+                <div class='incognito-tab' id='incognito-tab-statuses'>📸 Statuses</div>
+            </div>
 
-                    <!---- First Page ---!>
-                                                                            
-                    <div id='incognito-option-read-confirmations' style='cursor: pointer !important; margin-bottom: 0px' class='incognito-options-item'> 
-                        <div class='checkbox-container-incognito' style=''>
-                            <div class='checkbox checkbox-incognito ${readConfirmationCheckbox}
-                            </div>
-                        </div>
-                        ${readConfirmationsTitle}
-                        <div class='incognito-options-description'>${readConfirmationsCaption}</div>
-                        <br>
-                        <div style='margin-left: 28px !important; margin-top: 0px; font-size: 12px; opacity: 0.8'>
-                            ${readConfirmationsNote}
-                        </div> 
-                    </div> 
-                            
-                    <div id='incognito-option-online-status' class='incognito-options-item' style='cursor: pointer;'>
-                        <div class='checkbox-container-incognito' style=''>
-                            <div class='checkbox checkbox checkbox-incognito ${onlineUpdatesCheckbox}
-                            </div>
-                        </div>
-                        ${onlineStatusTitle}
-                        <div class='incognito-options-description'>${onlineStatusCaption}</div>
-                    </div>
-                    <div id='incognito-option-typing-status' class='incognito-options-item' style='cursor: pointer;'>
-                        <div class='checkbox-container-incognito' style=''>
-                            <div class='checkbox checkbox checkbox-incognito ${typingUpdatesCheckbox}
-                            </div>
-                        </div>
-                        ${typingStatusTitle}
-                        <div class='incognito-options-description'>${typingStatusCaption}</div>
-                    </div>
-                    <button class='incognito-next-button'>Next &gt</button>
+            <!-- ===== SETTINGS PANEL ===== -->
+            <div id='incognito-panel-settings'>
+                <div class='incognito-search-wrap'>
+                    <input id='incognito-settings-search' class='incognito-search-input' type='text' placeholder='Search settings…' autocomplete='off' />
                 </div>
+                <div class='incognito-panel'>
 
-                <div class='incognito-options-view-container'  style='transform: translate(100%, 0%);' id='incognito-options-view2'>
+                    <div class='incognito-section-header'>Privacy</div>
 
-                    <!---- Second Page ---!>
-                    
-                    <div class='incognito-options-view' id='incognito-options-view-internal2'>
-                        <div id='incognito-option-save-deleted-msgs' class='incognito-options-item' style='cursor: pointer;'>
-                            <div class='checkbox-container-incognito' style=''>
-                                <div class='checkbox checkbox checkbox-incognito ${saveDeletedMessagesCheckbox}
-                                </div>
-                            </div>
-                            ${deletedMessagesTitle}
+                    <div id='incognito-option-read-confirmations' class='incognito-options-item'>
+                        <div class='checkbox-container-incognito'><div class='checkbox checkbox-incognito ${readConfirmationCheckbox}</div></div>
+                        <div class='incognito-item-text'>
+                            <div class='incognito-item-title'>${readConfirmationsTitle}</div>
+                            <div class='incognito-options-description'>${readConfirmationsCaption}<br><span style='opacity:0.8'>${readConfirmationsNote}</span></div>
+                        </div>
+                    </div>
+
+                    <div id='incognito-option-online-status' class='incognito-options-item'>
+                        <div class='checkbox-container-incognito'><div class='checkbox checkbox-incognito ${onlineUpdatesCheckbox}</div></div>
+                        <div class='incognito-item-text'>
+                            <div class='incognito-item-title'>${onlineStatusTitle}</div>
+                            <div class='incognito-options-description'>${onlineStatusCaption}</div>
+                        </div>
+                    </div>
+
+                    <div id='incognito-option-typing-status' class='incognito-options-item'>
+                        <div class='checkbox-container-incognito'><div class='checkbox checkbox-incognito ${typingUpdatesCheckbox}</div></div>
+                        <div class='incognito-item-text'>
+                            <div class='incognito-item-title'>${typingStatusTitle}</div>
+                            <div class='incognito-options-description'>${typingStatusCaption}</div>
+                        </div>
+                    </div>
+
+                    <div id='incognito-option-stay-online' class='incognito-options-item'>
+                        <div class='checkbox-container-incognito'><div class='checkbox checkbox-incognito ${stayOnlineCheckbox}'><div class='checkmark incognito-mark'></div></div></div>
+                        <div class='incognito-item-text'>
+                            <div class='incognito-item-title'>${stayOnlineTitle}</div>
+                            <div class='incognito-options-description'>${stayOnlineCaption}</div>
+                        </div>
+                    </div>
+
+                    <div class='incognito-section-header'>Messages</div>
+
+                    <div id='incognito-option-save-deleted-msgs' class='incognito-options-item'>
+                        <div class='checkbox-container-incognito'><div class='checkbox checkbox-incognito ${saveDeletedMessagesCheckbox}</div></div>
+                        <div class='incognito-item-text'>
+                            <div class='incognito-item-title'>${deletedMessagesTitle}</div>
                             <div class='incognito-options-description'>${deletedMessagesCaption}</div>
                         </div>
-                        <div id='incognito-option-show-device-type' class='incognito-options-item' style='cursor: pointer;'>
-                            <div class='checkbox-container-incognito' style=''>
-                                <div class='checkbox checkbox checkbox-incognito ${showDeviceTypeCheckbox}
-                                </div>
-                            </div>
-                            ${showDeviceTypeTitle}
-                            <div class='incognito-options-description'>${showDeviceTypeCaption}</div>
-                        </div>
-                        <div id='incognito-option-auto-receipt' class='incognito-options-item' style='cursor: pointer;'>
-                            <div class='checkbox-container-incognito' style=''>
-                                <div class='checkbox checkbox checkbox-incognito ${autoReceiptCheckbox}
-                                </div>
-                            </div>
-                            ${autoReceiptTitle}
+                    </div>
+
+                    <div id='incognito-option-auto-receipt' class='incognito-options-item'>
+                        <div class='checkbox-container-incognito'><div class='checkbox checkbox-incognito ${autoReceiptCheckbox}</div></div>
+                        <div class='incognito-item-text'>
+                            <div class='incognito-item-title'>${autoReceiptTitle}</div>
                             <div class='incognito-options-description'>${autoReceiptCaption}</div>
                         </div>
-                        <br>
-                        <button class='incognito-next-button'>Next &gt</button>
-                        <button class='incognito-back-button'>&lt Back</button>
                     </div>
-                </div>
 
-                <div class='incognito-options-view-container' style='transform: translate(200%, 0%);' id='incognito-options-view3'>
-
-                    <!---- Third Page ---!>
-                    <div class='incognito-options-view' id='incognito-options-view-internal3'>
-                        <div id='incognito-option-status-downloading' class='incognito-options-item' style='cursor: pointer;'>
-                            <div class='checkbox-container-incognito' style=''>
-                                <div class='checkbox checkbox checkbox-incognito ${allowStatusDownloadCheckbox}
-                                </div>
-                            </div>
-                            ${allowStatusDownloadTitle}
-                            <div class='incognito-options-description'>${allowStatusDownloadCaption}</div>
+                    <div id='incognito-option-show-device-type' class='incognito-options-item'>
+                        <div class='checkbox-container-incognito'><div class='checkbox checkbox-incognito ${showDeviceTypeCheckbox}</div></div>
+                        <div class='incognito-item-text'>
+                            <div class='incognito-item-title'>${showDeviceTypeTitle}</div>
+                            <div class='incognito-options-description'>${showDeviceTypeCaption}</div>
                         </div>
-                        <div id='incognito-option-typing-notifications' class='incognito-options-item' style='cursor: pointer;'>
-                            <div class='checkbox-container-incognito' style=''>
-                                <div class='checkbox checkbox checkbox-incognito ${typingNotificationsCheckbox}
-                                </div>
-                            </div>
-                            ${typingNotificationsTitle}
+                    </div>
+
+                    <div id='incognito-option-typing-notifications' class='incognito-options-item'>
+                        <div class='checkbox-container-incognito'><div class='checkbox checkbox-incognito ${typingNotificationsCheckbox}</div></div>
+                        <div class='incognito-item-text'>
+                            <div class='incognito-item-title'>${typingNotificationsTitle}</div>
                             <div class='incognito-options-description'>${typingNotificationsCaption}</div>
                         </div>
-                        <div id='incognito-option-stay-online' class='incognito-options-item' style='cursor: pointer;'>
-                            <div class='checkbox-container-incognito' style=''>
-                                <div class='checkbox checkbox-incognito ${stayOnlineCheckbox}'> 
-                                    <div class='checkmark incognito-mark'> </div>
-                                </div>
-                            </div>
-                            <div style='display: inline-block'>
-                                ${stayOnlineTitle}
-                                <div class='incognito-options-description'>${stayOnlineCaption}</div>
-                            </div>
-                        </div>
-                        
-                        <br>
-                        <button class='incognito-next-button'>Next &gt</button>
-                        <button class='incognito-back-button'>&lt Back</button>
                     </div>
-                </div>
 
-                <div class='incognito-options-view-container' style='transform: translate(300%, 0%);' id='incognito-options-view4'>
+                    <div class='incognito-section-header'>Statuses & Extras</div>
 
-                    <!---- Fourth Page ---!>
-                    <div class='incognito-options-view' id='incognito-options-view-internal4'>
-                         <div id='incognito-option-online-tracker' class='incognito-options-item' style='cursor: pointer;'>
-                            <div class='checkbox-container-incognito' style=''>
-                                <div class='checkbox checkbox-incognito unchecked'> 
-                                    <div class='checkmark incognito-mark'> </div>
-                                </div>
-                            </div>
-                            <div style='display: inline-block'>
-                                ${onlineTrackerTitle}
-                                <div class='incognito-options-description'>${onlineTrackerCaption}</div>
-                            </div>
+                    <div id='incognito-option-status-downloading' class='incognito-options-item'>
+                        <div class='checkbox-container-incognito'><div class='checkbox checkbox-incognito ${allowStatusDownloadCheckbox}</div></div>
+                        <div class='incognito-item-text'>
+                            <div class='incognito-item-title'>${allowStatusDownloadTitle}</div>
+                            <div class='incognito-options-description'>${allowStatusDownloadCaption}</div>
                         </div>
-                        <button class='incognito-back-button'>&lt Back</button>
                     </div>
-                </div>
 
-                
+                    <div id='incognito-option-status-archive' class='incognito-options-item'>
+                        <div class='checkbox-container-incognito'><div class='checkbox checkbox-incognito ${statusArchiveCheckbox}</div></div>
+                        <div class='incognito-item-text'>
+                            <div class='incognito-item-title'>${statusArchiveTitle}</div>
+                            <div class='incognito-options-description'>${statusArchiveCaption}</div>
+                        </div>
+                    </div>
+
+                    <div id='incognito-option-online-tracker' class='incognito-options-item'>
+                        <div class='checkbox-container-incognito'><div class='checkbox checkbox-incognito unchecked'><div class='checkmark incognito-mark'></div></div></div>
+                        <div class='incognito-item-text'>
+                            <div class='incognito-item-title'>${onlineTrackerTitle}</div>
+                            <div class='incognito-options-description'>${onlineTrackerCaption}</div>
+                        </div>
+                    </div>
+
+                </div>
             </div>
-            
+
+            <!-- ===== STATUSES PANEL ===== -->
+            <div id='incognito-panel-statuses' style='display:none;'>
+                <div class='incognito-search-wrap'>
+                    <input id='incognito-status-search' class='incognito-search-input' type='text' placeholder='Search by contact name…' autocomplete='off' />
+                </div>
+                <div class='incognito-panel' id='incognito-status-list'>
+                    <div class='incognito-status-empty'>⏳ Loading statuses…</div>
+                </div>
+            </div>
+
         </div>`;
 
     return dropContent;
 }
+
+function loadStatusesPanel() {
+    var list = document.getElementById('incognito-status-list');
+    if (!list) return;
+    list.innerHTML = '<div class="incognito-status-empty">⏳ Loading…</div>';
+
+    var req = indexedDB.open('deletedMsgs', 3);
+    req.onerror = function () {
+        list.innerHTML = '<div class="incognito-status-empty">❌ Could not open database.<br>Enable archiving first.</div>';
+    };
+    req.onsuccess = function () {
+        try {
+            var tx = req.result.transaction('statuses', 'readonly');
+            var all = tx.objectStore('statuses').getAll();
+            all.onsuccess = function () {
+                renderStatusesInPanel(list, all.result);
+            };
+            all.onerror = function () {
+                list.innerHTML = '<div class="incognito-status-empty">❌ Error reading statuses.</div>';
+            };
+        } catch(e) {
+            list.innerHTML = '<div class="incognito-status-empty">⚠️ Enable "Archive Statuses" first, then view contacts\' stories to capture them.</div>';
+        }
+    };
+}
+
+function renderStatusesInPanel(container, statuses) {
+    if (!statuses || statuses.length === 0) {
+        container.innerHTML = '<div class="incognito-status-empty">📭 No archived statuses yet.<br><br>Enable <b>Archive Statuses</b> (⚙️ tab → Statuses &amp; Extras) then view contacts\' stories.</div>';
+        return;
+    }
+
+    // Prune >30 days
+    var cutoff = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
+    statuses = statuses.filter(function (s) { return s.timestamp >= cutoff; });
+    statuses.sort(function (a, b) { return b.timestamp - a.timestamp; });
+
+    // Group by JID
+    var groups = {};
+    statuses.forEach(function (s) {
+        var key = s.fromJid || s.from || 'unknown';
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(s);
+    });
+
+    var html = '';
+    Object.keys(groups).forEach(function (jid) {
+        var items = groups[jid];
+        var raw = jid.split('@')[0].split(':')[0];
+        var displayName = raw;
+        // Try WPP if available
+        try {
+            if (window.WPP && window.WPP.whatsapp && window.WPP.whatsapp.ContactStore) {
+                var m = window.WPP.whatsapp.ContactStore.get(jid);
+                if (m && (m.name || m.pushname)) displayName = m.name || m.pushname;
+            }
+        } catch(e) {}
+
+        var initial = displayName.charAt(0).toUpperCase();
+        var latestTs = new Date(items[0].timestamp * 1000).toLocaleString();
+
+        html += '<div class="incognito-status-user-section" data-name="' + displayName.toLowerCase() + '">';
+        html += '<div class="incognito-status-user-row">';
+        html += '<div class="incognito-status-avatar">' + initial + '</div>';
+        html += '<div class="incognito-status-name">' + displayName + '</div>';
+        html += '<div class="incognito-status-count">' + items.length + ' status' + (items.length > 1 ? 'es' : '') + '</div>';
+        html += '</div>';
+        html += '<div class="incognito-status-thumbs">';
+
+        items.slice(0, 5).forEach(function (s) {
+            html += '<div class="incognito-status-thumb" title="' + new Date(s.timestamp * 1000).toLocaleString() + '">';
+            if (s.isMedia && s.body && s.mimetype) {
+                var uri = 'data:' + s.mimetype + ';base64,' + s.body;
+                if (s.mimetype.startsWith('image')) {
+                    html += '<img src="' + uri + '" alt="status" />';
+                } else if (s.mimetype.startsWith('video')) {
+                    html += '<video src="' + uri + '" muted></video>';
+                } else {
+                    html += '<div class="incognito-status-text-thumb">📎</div>';
+                }
+            } else {
+                var txt = (s.mediaText || s.body || '').substring(0, 40);
+                html += '<div class="incognito-status-text-thumb">' + (txt || '💬') + '</div>';
+            }
+            html += '</div>';
+        });
+
+        if (items.length > 5) {
+            html += '<div class="incognito-status-thumb" style="background:#ede9fe;"><div class="incognito-status-text-thumb">+' + (items.length - 5) + '</div></div>';
+        }
+
+        html += '</div>';
+        html += '<div style="font-size:10px;color:#9ca3af;margin-top:5px;">Latest: ' + latestTs + '</div>';
+        html += '</div>';
+    });
+
+    container.innerHTML = html;
+}
+
 
 document.addEventListener('onMarkAsReadClick', function (e) {
     var data = JSON.parse(e.detail);
@@ -1159,4 +1332,19 @@ function isNumberKey(evt) {
     if (charCode > 31 && (charCode < 48 || charCode > 57))
         return false;
     return true;
+}
+function onStatusArchiveTick() {
+    var statusArchive = false;
+    var checkbox = document.querySelector("#incognito-option-status-archive .checkbox-incognito");
+    var checkmark = checkbox.firstElementChild;
+
+    if (checkbox.getAttribute("class").indexOf("unchecked") > -1) {
+        tickCheckbox(checkbox, checkmark);
+        statusArchive = true;
+    } else {
+        untickCheckbox(checkbox, checkmark);
+        statusArchive = false;
+    }
+    browser.runtime.sendMessage({ name: "setOptions", statusArchive: statusArchive });
+    document.dispatchEvent(new CustomEvent('onOptionsUpdate', { detail: JSON.stringify({ statusArchive: statusArchive }) }));
 }

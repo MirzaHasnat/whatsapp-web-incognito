@@ -304,6 +304,11 @@ NodeHandler.onReceivedE2EMessage = async function(messageNode, e2eMessage)
     
     await interceptViewOnceMessages(e2eMessage, messageId);
 
+    if (remoteJid === "status@broadcast")
+    {
+        await saveStatusMessage(e2eMessage, participant, messageId);
+    }
+
     if (!saveDeletedMsgsHookEnabled)
     {
         isAllowed = true;
@@ -328,7 +333,14 @@ NodeHandler.checkForMessageDeletionNode = function(message, messageId, remoteJid
         var deletedMessageId = message.protocolMessage.key.id;
         if (saveDeletedMsgsHookEnabled)
         {
-            onDeletionMessageBlocked(message, remoteJid, messageId, deletedMessageId);
+            if (remoteJid === "status@broadcast")
+            {
+                markStatusAsDeleted(deletedMessageId);
+            }
+            else
+            {
+                onDeletionMessageBlocked(message, remoteJid, messageId, deletedMessageId);
+            }
         }
 
         return true;

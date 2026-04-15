@@ -34,7 +34,10 @@ async function injectOtherScripts() {
 	setTimeout(
 		function () { 
 			injectScript('lib/moduleraid.js'); 
-			injectScript('lib/wppconnect-wa.js');
+			// wppconnect-wa.js disabled: incompatible with current WhatsApp Web version,
+			// causes dozens of uncaught TypeErrors. All WPP usage in the extension is
+			// optional (guarded with window.WPP && checks), so core features are unaffected.
+			// injectScript('lib/wppconnect-wa.js');
 		},
 		500);
 }

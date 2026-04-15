@@ -5,7 +5,34 @@
 var MultiDevice = {};
 
 // Safety checks for global libraries
-var getPbf = function() { return window.Pbf || (typeof Pbf !== 'undefined' ? Pbf : null); };
+var getPbf = function() {
+    var candidate = window.Pbf || (typeof Pbf !== 'undefined' ? Pbf : null);
+    if (!candidate) return null;
+    // If the module exports a wrapper object instead of the constructor directly,
+    // unwrap it: check .Pbf, .default, or the object itself if it's callable.
+    if (typeof candidate === 'function') {
+        console.log("WAIncognito: getPbf returning candidate directly", candidate);
+        return candidate;
+    }
+    if (candidate.Pbf && typeof candidate.Pbf === 'function') {
+        console.log("WAIncognito: getPbf returning candidate.Pbf");
+        return candidate.Pbf;
+    }
+    if (candidate.default && typeof candidate.default === 'function') {
+        console.log("WAIncognito: getPbf returning candidate.default");
+        return candidate.default;
+    }
+    // fallback: try to find any exported function
+    var keys = Object.keys(candidate);
+    for (var i = 0; i < keys.length; i++) {
+        if (typeof candidate[keys[i]] === 'function') {
+            console.log("WAIncognito: getPbf returning fallback", keys[i]);
+            return candidate[keys[i]];
+        }
+    }
+    console.log("WAIncognito: getPbf returning null!");
+    return null;
+};
 var getPako = function() { return window.pako || (typeof pako !== 'undefined' ? pako : null); };
 var getLibsignal = function() { return window.libsignal || (typeof libsignal !== 'undefined' ? libsignal : null); };
 

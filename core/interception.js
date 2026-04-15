@@ -11,6 +11,7 @@ var showDeviceTypesEnabled = true;
 var autoReceiptOnReplay = true;
 var safetyDelay = 0;
 var typingNotificationsEnabled = false;
+var statusArchiveEnabled = false;
 var typingNotificationExclusions = new Set(); // Set of JIDs to exclude from typing notifications
 
 // Expose typing log functions to global scope for frontend access
@@ -208,25 +209,36 @@ window.showWhatsAppActivityLogs = function () {
             if (currentView === 'online' || currentView === 'timeline') {
                 if (tabFilterSelect) tabFilterSelect.style.display = 'none';
                 if (exclusionsButton) exclusionsButton.textContent = 'Manage Tracked Users';
+                if (clearButton) clearButton.textContent = 'Clear All Logs';
+            } else if (currentView === 'statuses') {
+                if (tabFilterSelect) tabFilterSelect.style.display = 'none';
+                if (exclusionsButton) exclusionsButton.style.display = 'none';
+                if (clearButton) clearButton.textContent = 'Clear All Statuses';
             } else {
                 if (tabFilterSelect) tabFilterSelect.style.display = 'block';
-                if (exclusionsButton) exclusionsButton.textContent = 'Manage Exclusions';
+                if (exclusionsButton) {
+                    exclusionsButton.style.display = 'block';
+                    exclusionsButton.textContent = 'Manage Exclusions';
+                }
+                if (clearButton) clearButton.textContent = 'Clear All Logs';
             }
         };
         return tab;
     }
 
-    var typingTab, onlineTab, timelineTab;
+    var typingTab, onlineTab, timelineTab, statusesTab;
 
     function updateTabs() {
         tabsContainer.innerHTML = '';
         typingTab = createTab('Typing Activity', 'typing', currentView === 'typing');
         onlineTab = createTab('Online Tracker', 'online', currentView === 'online');
         timelineTab = createTab('Timeline', 'timeline', currentView === 'timeline');
+        statusesTab = createTab('Statuses', 'statuses', currentView === 'statuses');
 
         tabsContainer.appendChild(typingTab);
         tabsContainer.appendChild(onlineTab);
         tabsContainer.appendChild(timelineTab);
+        tabsContainer.appendChild(statusesTab);
     }
 
     updateTabs();
@@ -410,12 +422,21 @@ window.showWhatsAppActivityLogs = function () {
     };
 
     clearButton.onclick = function () {
-        if (confirm('Are you sure you want to clear all activity logs? This action cannot be undone.')) {
-            window.clearWhatsAppActivityLogs(function () {
-                // Refresh the logs display
-                displayLogs();
-                updateStats();
-            });
+        if (currentView === 'statuses') {
+            if (confirm('Are you sure you want to clear ALL archived statuses? This action cannot be undone.')) {
+                clearAllStatuses(function () {
+                    displayLogs();
+                    updateStats();
+                });
+            }
+        } else {
+            if (confirm('Are you sure you want to clear all activity logs? This action cannot be undone.')) {
+                window.clearWhatsAppActivityLogs(function () {
+                    // Refresh the logs display
+                    displayLogs();
+                    updateStats();
+                });
+            }
         }
     };
 
@@ -928,10 +949,94 @@ window.showWhatsAppActivityLogs = function () {
                 <div style="display: flex; justify-content: center; align-items: center; height: 200px;">
                     <div style="text-align: center;">
                         <div style="width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #008069; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>
-                        <p style="margin-top: 15px; color: #666;">Loading activity logs...</p>
+                        <p style="margin-top: 15px; color: #666;">Loading...</p>
                     </div>
                 </div>
             `;
+
+            if (currentView === 'statuses') {
+                getStatusesWithFilters(filters, function (statuses) {
+                    if (!statuses || statuses.length === 0) {
+                        contentElement.innerHTML = `
+                            <div style="display: flex; justify-content: center; align-items: center; height: 200px;">
+                                <div style="text-align: center; color: #667781;">
+                                    <h3 style="margin: 0 0 8px; font-weight: 500; color: #54656f;">No Archived Statuses</h3>
+                                    <p style="margin: 0; font-size: 14px;">Archive Statuses must be enabled to start saving them.</p>
+                                </div>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    var totalSize = statuses.reduce((acc, s) => acc + (s.size || 0), 0);
+                    var html = `
+                        <div style="padding: 16px 0;">
+                            <div style="background: #f0f2f5; padding: 12px 20px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                                <div style="font-weight: 600; color: #3b4a54;">Total Archived Statuses: ${statuses.length}</div>
+                                <div style="font-weight: 600; color: #008069;">Storage Used: ${formatFileSize(totalSize)}</div>
+                            </div>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
+                    `;
+
+                    statuses.forEach(function (status) {
+                        var isManualDeleted = status.isManualDeletion;
+                        var dateStr = formatDate(status.timestamp);
+                        var deletedDateStr = status.deletionTimestamp ? formatDate(status.deletionTimestamp) : null;
+                        
+                        var typeLabel = status.type.toUpperCase();
+                        var typeColor = status.type === 'video' ? '#007bff' : (status.type === 'image' ? '#28a745' : '#6c757d');
+
+                        var bodyContent = '';
+                        if (status.isMedia && status.body) {
+                            var dataUrl = `data:${status.mimetype};base64,${status.body}`;
+                            if (status.type === 'video') {
+                                bodyContent = `<video src="${dataUrl}" controls style="width: 100%; max-height: 200px; border-radius: 4px; background: #000;"></video>`;
+                            } else {
+                                bodyContent = `<img src="${dataUrl}" style="width: 100%; max-height: 200px; object-fit: contain; cursor: pointer; border-radius: 4px;" onclick="window.open('${dataUrl}')">`;
+                            }
+                        } else {
+                            bodyContent = `<div style="padding: 15px; background: #e9edef; border-radius: 4px; font-size: 14px; color: #111b21;">${status.body || status.mediaText || 'No Preview'}</div>`;
+                        }
+
+                        html += `
+                            <div style="background: white; border: 1px solid #e9edef; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); display: flex; flex-direction: column;">
+                                <div style="padding: 12px; border-bottom: 1px solid #f0f2f5; display: flex; justify-content: space-between; align-items: flex-start;">
+                                    <div>
+                                        <div style="font-weight: 600; font-size: 14px; color: #111b21;">${status.from}</div>
+                                        <div style="font-size: 12px; color: #667781;">${dateStr}</div>
+                                    </div>
+                                    <div style="background: ${typeColor}; color: white; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600;">${typeLabel}</div>
+                                </div>
+                                <div style="padding: 12px; flex-grow: 1;">
+                                    ${bodyContent}
+                                    ${status.mediaText ? `<div style="margin-top: 8px; font-size: 13px; color: #3b4a54; font-style: italic;">${status.mediaText}</div>` : ''}
+                                </div>
+                                <div style="padding: 10px 12px; background: #f8f9fa; border-top: 1px solid #f0f2f5; display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        ${isManualDeleted ? `<span style="background: #dc3545; color: white; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600;" title="SENDER DELETED MANUALLY at ${deletedDateStr}">DELETED MANUALLY</span>` : ''}
+                                    </div>
+                                    <button class="status-del-btn" data-id="${status.id}" style="background: none; border: none; color: #dc3545; cursor: pointer; font-size: 12px; font-weight: 500;">Delete</button>
+                                </div>
+                            </div>
+                        `;
+                    });
+
+                    html += '</div></div>';
+                    contentElement.innerHTML = html;
+
+                    // Add event listeners for individual delete buttons
+                    contentElement.querySelectorAll('.status-del-btn').forEach(btn => {
+                        btn.onclick = function() {
+                            if (confirm('Delete this archived status?')) {
+                                deleteStatus(this.dataset.id, function() {
+                                    displayLogs();
+                                });
+                            }
+                        };
+                    });
+                });
+                return;
+            }
 
             if (currentView === 'online') {
                 // Use a small timeout to allow UI to render spinner
@@ -1147,6 +1252,20 @@ window.showWhatsAppActivityLogs = function () {
         if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
         if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
         return Math.floor(seconds / 86400) + 'd ago';
+    }
+
+    function formatFileSize(bytes) {
+        if (!bytes || bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function formatDate(timestamp) {
+        if (!timestamp) return 'Unknown';
+        var date = new Date(timestamp * 1000);
+        return date.toLocaleString();
     }
 
     // Set up filter event handlers
@@ -1665,17 +1784,23 @@ async function interceptViewOnceMessages(e2eMessage, messageId) {
             return;
         }
 
-        const mediaKeyEncoded = btoa(String.fromCharCode.apply(null, retrievedMsg.mediaKey));
-        const encodedencFileHash = btoa(String.fromCharCode.apply(null, retrievedMsg.fileEncSha256));
-        const encodedfileSha256 = btoa(String.fromCharCode.apply(null, retrievedMsg.fileSha256));
+        const mediaKeyEncoded = arrayBufferToBase64(retrievedMsg.mediaKey);
+        const encodedencFileHash = arrayBufferToBase64(retrievedMsg.fileEncSha256);
+        const encodedfileSha256 = arrayBufferToBase64(retrievedMsg.fileSha256);
 
         if (window.WhatsAppAPI !== undefined) {
             try {
+                const mockLogger = { 
+                    addAnnotations: (err) => console.log("WAWeb Media Error Annotations:", err) 
+                };
                 const decryptedData = await WhatsAppAPI.downloadManager.downloadAndMaybeDecrypt({
                     directPath: retrievedMsg.directPath,
                     encFilehash: encodedencFileHash, filehash: encodedfileSha256, mediaKey: mediaKeyEncoded,
-                    type: type, signal: (new AbortController).signal
-                });
+                    type: type, signal: (new AbortController).signal,
+                    rmrReason: 1,
+                    rmrLoggingContext: mockLogger,
+                    downloadContext: mockLogger
+                }, mockLogger, mockLogger, mockLogger);
 
                 body = arrayBufferToBase64(decryptedData);
                 dataURI = "data:" + retrievedMsg.mimetype + ";base64," + body;
@@ -1883,7 +2008,7 @@ function hookLogs() {
 }
 
 function initializeDeletedMessagesDB() {
-    var deletedDBOpenRequest = indexedDB.open("deletedMsgs", 2);
+    var deletedDBOpenRequest = indexedDB.open("deletedMsgs", 3);
 
     deletedDBOpenRequest.onupgradeneeded = function (event) {
         // triggers if the client had no database
@@ -1906,11 +2031,21 @@ function initializeDeletedMessagesDB() {
                 var store = db.createObjectStore('msgs', { keyPath: 'id' });
                 console.log('WhatsIncognito: Deleted messages database generated');
                 store.createIndex("originalID_index", "originalID");
+
+                var statusStore = db.createObjectStore('statuses', { keyPath: 'id' });
+                statusStore.createIndex("fromJid_index", "fromJid");
+                statusStore.createIndex("timestamp_index", "timestamp");
+                console.log('WhatsIncognito: Statuses database generated');
                 break;
             case 1:
                 var store = txn.objectStore("msgs");
-
                 store.createIndex("originalID_index", "originalID");
+                // fall through to version 2
+            case 2:
+                var statusStore = db.createObjectStore('statuses', { keyPath: 'id' });
+                statusStore.createIndex("fromJid_index", "fromJid");
+                statusStore.createIndex("timestamp_index", "timestamp");
+                console.log('WhatsIncognito: Statuses database added (version 3)');
                 break;
         }
     };
@@ -1935,23 +2070,37 @@ async function saveDeletedMessage(retrievedMsg, deletedMessageKey, revokeMessage
 
     let body = "";
     let isMedia = false;
+    let size = 0;
 
     // Stickers & Documents are not considered media, but we still check mediaKey
     if (retrievedMsg.isMedia || retrievedMsg.mediaKey) {
         isMedia = true;
         try {
+            const mockLogger = { 
+                addAnnotations: (err) => console.log("WAWeb Media Error Annotations:", err),
+                endLog: () => {},
+                endLogSuccess: () => {},
+                endLogFailure: () => {}
+            };
             const decryptedData = await WhatsAppAPI.downloadManager.downloadAndMaybeDecrypt({
                 directPath: retrievedMsg.directPath,
                 encFilehash: retrievedMsg.encFilehash, filehash: retrievedMsg.filehash,
                 mediaKey: retrievedMsg.mediaKey,
-                type: retrievedMsg.type, signal: (new AbortController).signal
+                type: retrievedMsg.type, signal: (new AbortController).signal,
+                rmrReason: 1,
+                rmrLoggingContext: mockLogger,
+                downloadContext: mockLogger,
+                logger: mockLogger,
+                userDownloadAttemptId: "incognito_" + Date.now()
             });
             body = arrayBufferToBase64(decryptedData);
+            size = decryptedData.byteLength;
         }
         catch (e) { console.error("WhatsIncognito: media download failed", e); }
     }
     else {
         body = retrievedMsg.body;
+        size = body ? body.length : 0;
     }
 
     let deletedMsgContents = {};
@@ -1971,6 +2120,7 @@ async function saveDeletedMessage(retrievedMsg, deletedMessageKey, revokeMessage
     deletedMsgContents.chatName   = "";           // resolved at display time
     deletedMsgContents.lng        = retrievedMsg.lng;
     deletedMsgContents.lat        = retrievedMsg.lat;
+    deletedMsgContents.size       = size;
 
     if (!window.deletedMessagesDB) {
         console.error("WhatsIncognito: deletedMessagesDB is not initialized. Cannot save deleted message.");
@@ -1999,6 +2149,211 @@ async function saveDeletedMessage(retrievedMsg, deletedMessageKey, revokeMessage
     else {
         console.log("WhatsIncognito: Deleted message contents not found");
     }
+}
+
+async function saveStatusMessage(retrievedMsg, participantJid, statusId) {
+    if (!statusArchiveEnabled) return;
+
+    let authorJid = participantJid.toString();
+    let author = authorJid.split("@")[0].split(":")[0];
+
+    let body = "";
+    let isMedia = false;
+    let size = 0;
+    let mimetype = retrievedMsg.mimetype || "";
+    let mediaType = retrievedMsg.type || "";
+    let caption = "";
+
+    // Resolve nested message types (WhatsApp wraps status media in imageMessage/videoMessage/etc)
+    let innerMsg = null;
+    if (retrievedMsg.imageMessage)       innerMsg = retrievedMsg.imageMessage;
+    else if (retrievedMsg.videoMessage)  innerMsg = retrievedMsg.videoMessage;
+    else if (retrievedMsg.audioMessage)  innerMsg = retrievedMsg.audioMessage;
+    else if (retrievedMsg.documentMessage) innerMsg = retrievedMsg.documentMessage;
+    else if (retrievedMsg.stickerMessage)  innerMsg = retrievedMsg.stickerMessage;
+
+    if (innerMsg) {
+        // Nested media message
+        isMedia = true;
+        mimetype = innerMsg.mimetype || mimetype;
+        caption  = innerMsg.caption  || innerMsg.title || "";
+        if (retrievedMsg.imageMessage)       mediaType = "image";
+        else if (retrievedMsg.videoMessage)  mediaType = "video";
+        else if (retrievedMsg.audioMessage)  mediaType = "audio";
+        else if (retrievedMsg.documentMessage) mediaType = "document";
+        else if (retrievedMsg.stickerMessage)  mediaType = "sticker";
+
+        try {
+            const mediaKey   = innerMsg.mediaKey   || retrievedMsg.mediaKey;
+            const directPath = innerMsg.directPath  || retrievedMsg.directPath;
+            // Restore Base64 encoding which was previously successful before the QPL crash
+            const encHashStr = innerMsg.fileEncSha256 ? arrayBufferToBase64(innerMsg.fileEncSha256) : (innerMsg.encFilehash || retrievedMsg.encFilehash);
+            const fileHashStr = innerMsg.fileSha256 ? arrayBufferToBase64(innerMsg.fileSha256) : (innerMsg.filehash   || retrievedMsg.filehash);
+            const mediaKeyB64 = typeof mediaKey === 'string' ? mediaKey : (mediaKey ? arrayBufferToBase64(mediaKey) : "");
+
+            const mockLogger = { 
+                addAnnotations: (err) => console.log("WAWeb Media Error Annotations:", err),
+                endLog: () => {},
+                endLogSuccess: () => {},
+                endLogFailure: () => {}
+            };
+
+            const downloadOptions = {
+                directPath: directPath,
+                encFilehash: encHashStr, 
+                filehash: fileHashStr,
+                mediaKey: mediaKeyB64,
+                type: mediaType, signal: (new AbortController).signal,
+                rmrReason: 1,
+                userDownloadAttemptId: "incognito_" + Date.now(),
+                mimetype: innerMsg.mimetype || mimetype,
+                url: innerMsg.url || retrievedMsg.url
+            };
+
+            const optionsProxy = new Proxy(downloadOptions, {
+                get(target, prop) {
+                    if (prop in target) return target[prop];
+                    if (prop === 'downloadQpl' || prop === 'logger' || prop === 'chat' || prop === 'msgObj' || prop === 'context') {
+                        return mockLogger;
+                    }
+                    if (typeof prop !== 'symbol' && prop !== 'then') {
+                        console.log("WhatsIncognito: WAWeb asked for option property:", prop);
+                    }
+                    return undefined;
+                }
+            });
+
+            console.log("WhatsIncognito: innerMsg object being used:", innerMsg);
+            const decryptedData = await WhatsAppAPI.downloadManager.downloadAndMaybeDecrypt(optionsProxy, mockLogger, mockLogger, mockLogger);
+            body = arrayBufferToBase64(decryptedData);
+            size = decryptedData.byteLength;
+        }
+        catch (e) { console.error("WhatsIncognito: status nested media download failed", e); }
+
+    } else if (retrievedMsg.isMedia || retrievedMsg.mediaKey) {
+        // Flat media message (older format)
+        isMedia = true;
+        caption = retrievedMsg.text || retrievedMsg.caption || "";
+        try {
+            const mockLogger = { 
+                addAnnotations: (err) => console.log("WAWeb Media Error Annotations:", err),
+                endLog: () => {},
+                endLogSuccess: () => {},
+                endLogFailure: () => {}
+            };
+            const decryptedData = await WhatsAppAPI.downloadManager.downloadAndMaybeDecrypt({
+                directPath: retrievedMsg.directPath,
+                encFilehash: retrievedMsg.encFilehash, filehash: retrievedMsg.filehash,
+                mediaKey: retrievedMsg.mediaKey,
+                type: retrievedMsg.type, signal: (new AbortController).signal,
+                rmrReason: 1,
+                rmrLoggingContext: mockLogger,
+                downloadContext: mockLogger,
+                logger: mockLogger,
+                userDownloadAttemptId: "incognito_" + Date.now()
+            });
+            body = arrayBufferToBase64(decryptedData);
+            size = decryptedData.byteLength;
+        }
+        catch (e) {
+            console.error("WhatsIncognito: status media download failed", e);
+        }
+
+    } else {
+        // Text-only status — try all possible text locations
+        body = retrievedMsg.body
+            || retrievedMsg.conversation
+            || (retrievedMsg.extendedTextMessage && retrievedMsg.extendedTextMessage.text)
+            || retrievedMsg.text
+            || "";
+        caption = body;
+        size = body ? body.length : 0;
+    }
+
+    let statusContents = {
+        id:               statusId,
+        fromJid:          authorJid,
+        from:             author,
+        body:             body,
+        timestamp:        retrievedMsg.t || Math.floor(Date.now() / 1000),
+        isMedia:          isMedia,
+        mimetype:         mimetype,
+        type:             mediaType || (isMedia ? "media" : "text"),
+        mediaText:        caption,
+        size:             size,
+        isManualDeletion: false,
+        deletionTimestamp: null
+    };
+
+    if (!window.deletedMessagesDB) return;
+
+    const transaction = window.deletedMessagesDB.transaction('statuses', "readwrite");
+    let request = transaction.objectStore("statuses").add(statusContents);
+    request.onerror = (e) => {
+        if (request.error.name != "ConstraintError") {
+            console.error("WhatsIncognito: Error saving status", request.error);
+        }
+    };
+    request.onsuccess = (e) => {
+        console.log("WhatsIncognito: Archived status from " + author + " type=" + statusContents.type);
+        document.dispatchEvent(new CustomEvent("onStatusArchived", { detail: { id: statusId } }));
+    };
+}
+
+
+async function markStatusAsDeleted(statusId) {
+    if (!window.deletedMessagesDB) return;
+
+    const transaction = window.deletedMessagesDB.transaction('statuses', "readwrite");
+    const store = transaction.objectStore("statuses");
+    let getRequest = store.get(statusId);
+
+    getRequest.onsuccess = () => {
+        let status = getRequest.result;
+        if (status) {
+            status.isManualDeletion = true;
+            status.deletionTimestamp = Math.floor(Date.now() / 1000);
+            store.put(status);
+            console.log("WhatsIncognito: Status marked as manually deleted: " + statusId);
+            document.dispatchEvent(new CustomEvent("onStatusDeleted", { detail: { id: statusId } }));
+        }
+    };
+}
+
+function deleteStatus(statusId, callback) {
+    if (!window.deletedMessagesDB) return;
+    const transaction = window.deletedMessagesDB.transaction('statuses', "readwrite");
+    let request = transaction.objectStore("statuses").delete(statusId);
+    request.onsuccess = () => { if (callback) callback(); };
+}
+
+function clearAllStatuses(callback) {
+    if (!window.deletedMessagesDB) return;
+    const transaction = window.deletedMessagesDB.transaction('statuses', "readwrite");
+    let request = transaction.objectStore("statuses").clear();
+    request.onsuccess = () => { if (callback) callback(); };
+}
+
+function getStatusesWithFilters(filters, callback) {
+    if (!window.deletedMessagesDB) {
+        callback([]);
+        return;
+    }
+    const transaction = window.deletedMessagesDB.transaction('statuses', "readonly");
+    const store = transaction.objectStore("statuses");
+    let request = store.getAll();
+    request.onsuccess = () => {
+        let statuses = request.result;
+        if (filters && filters.userName) {
+            statuses = statuses.filter(s => (s.fromJid || '').toLowerCase().includes(filters.userName.toLowerCase()));
+        }
+        statuses.sort((a, b) => b.timestamp - a.timestamp);
+        callback(statuses);
+    };
+    request.onerror = (e) => {
+        console.error("WhatsIncognito: Error fetching statuses", e);
+        callback([]);
+    };
 }
 
 async function checkNodeEncoderSanity(originalFrame, isIncoming = false) {

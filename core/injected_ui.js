@@ -1482,6 +1482,313 @@ function closeDeletedMessagesModal() {
 
 var _buttonsInjected = false;
 
+// ---------------------
+// Status Archive Button & Modal
+// ---------------------
+
+function injectStatusArchiveButton() {
+    if (document.getElementById('whatsapp-status-archive-button')) return;
+
+    var button = document.createElement('div');
+    button.id = 'whatsapp-status-archive-button';
+    button.title = 'View Archived Statuses';
+    button.style.cssText = [
+        'position: fixed',
+        'bottom: 280px',
+        'right: 20px',
+        'width: 50px',
+        'height: 50px',
+        'background-color: #7c3aed',
+        'border-radius: 50%',
+        'cursor: pointer',
+        'z-index: 2147483647',
+        'display: flex',
+        'justify-content: center',
+        'align-items: center',
+        'box-shadow: 0 2px 10px rgba(0,0,0,0.35)',
+        'transition: background-color 0.2s, transform 0.2s',
+        'user-select: none',
+    ].join('; ');
+
+    button.addEventListener('mouseenter', function () {
+        button.style.backgroundColor = '#6d28d9';
+        button.style.transform = 'scale(1.08)';
+    });
+    button.addEventListener('mouseleave', function () {
+        button.style.backgroundColor = '#7c3aed';
+        button.style.transform = 'scale(1)';
+    });
+    button.addEventListener('click', function () {
+        showStatusArchiveModal();
+    });
+
+    var icon = document.createElement('div');
+    icon.innerHTML = '📸';
+    icon.style.cssText = 'font-size: 22px; line-height: 1; pointer-events: none;';
+
+    var badge = document.createElement('div');
+    badge.id = 'whatsapp-status-archive-button-badge';
+    badge.textContent = '0';
+    badge.style.cssText = [
+        'position: absolute',
+        'top: -5px',
+        'right: -5px',
+        'min-width: 20px',
+        'height: 20px',
+        'background-color: #db2777',
+        'border-radius: 10px',
+        'display: none',
+        'justify-content: center',
+        'align-items: center',
+        'font-size: 11px',
+        'color: white',
+        'font-weight: bold',
+        'padding: 0 4px',
+        'font-family: sans-serif',
+        'pointer-events: none',
+    ].join('; ');
+
+    button.appendChild(icon);
+    button.appendChild(badge);
+    document.body.appendChild(button);
+
+    updateStatusArchiveBadgeCount();
+    setInterval(updateStatusArchiveBadgeCount, 30000);
+    console.log('[WAIncognito] Status archive button injected successfully');
+}
+
+function updateStatusArchiveBadgeCount() {
+    var req = indexedDB.open('deletedMsgs', 3);
+    req.onsuccess = function () {
+        var db = req.result;
+        try {
+            var tx = db.transaction('statuses', 'readonly');
+            var countReq = tx.objectStore('statuses').count();
+            countReq.onsuccess = function () {
+                var count = countReq.result;
+                var badge = document.getElementById('whatsapp-status-archive-button-badge');
+                if (badge) {
+                    badge.textContent = count > 99 ? '99+' : count.toString();
+                    badge.style.display = count > 0 ? 'flex' : 'none';
+                }
+            };
+        } catch (e) { /* store may not exist yet */ }
+    };
+}
+
+function showStatusArchiveModal() {
+    if (document.getElementById('wa-status-archive-modal')) return;
+
+    // ---- Styles ----
+    var style = document.createElement('style');
+    style.id = 'wa-status-archive-styles';
+    style.textContent = `
+        @keyframes saModalIn { from { opacity:0; transform:translateY(-18px); } to { opacity:1; transform:translateY(0); } }
+        #wa-status-archive-modal ::-webkit-scrollbar { width: 7px; }
+        #wa-status-archive-modal ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        #wa-status-archive-modal ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+        .sa-user-section { margin-bottom: 28px; }
+        .sa-user-header { display:flex; align-items:center; gap:10px; padding:10px 0 8px; border-bottom:2px solid #ede9fe; margin-bottom:12px; }
+        .sa-user-avatar { width:40px; height:40px; border-radius:50%; background:linear-gradient(135deg,#7c3aed,#db2777); display:flex; align-items:center; justify-content:center; color:white; font-weight:700; font-size:16px; flex-shrink:0; }
+        .sa-user-name { font-weight:600; font-size:15px; color:#1f2937; }
+        .sa-user-count { font-size:12px; color:#6b7280; margin-left:auto; }
+        .sa-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; }
+        .sa-card { border:1px solid #e5e7eb; border-radius:10px; overflow:hidden; background:#fafafa; transition:transform 0.18s, box-shadow 0.18s; }
+        .sa-card:hover { transform:translateY(-3px); box-shadow:0 6px 16px rgba(124,58,237,0.15); }
+        .sa-card-media { width:100%; height:130px; object-fit:cover; display:block; background:#ede9fe; }
+        .sa-card-text-body { height:130px; display:flex; align-items:center; justify-content:center; padding:12px; background:linear-gradient(135deg,#ede9fe,#fce7f3); font-size:13px; color:#374151; text-align:center; word-break:break-word; }
+        .sa-card-info { padding:8px 10px; font-size:11px; color:#6b7280; }
+        .sa-card-ts { font-size:10px; color:#9ca3af; margin-top:2px; }
+        .sa-dl-btn { display:inline-block; margin-top:6px; background:#7c3aed; color:white; border:none; padding:3px 8px; border-radius:4px; cursor:pointer; font-size:11px; }
+        .sa-dl-btn:hover { background:#6d28d9; }
+    `;
+    document.head.appendChild(style);
+
+    // ---- Modal backdrop ----
+    var modal = document.createElement('div');
+    modal.id = 'wa-status-archive-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.65);z-index:2147483646;display:flex;justify-content:center;align-items:center;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;';
+
+    function closeModal() {
+        if (modal.parentNode) modal.parentNode.removeChild(modal);
+        var s = document.getElementById('wa-status-archive-styles');
+        if (s && s.parentNode) s.parentNode.removeChild(s);
+    }
+
+    modal.addEventListener('click', function(e) { if (e.target === modal) closeModal(); });
+
+    // ---- Modal box ----
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,0.22);width:96%;max-width:1100px;max-height:92vh;overflow:hidden;display:flex;flex-direction:column;animation:saModalIn 0.25s ease-out;';
+
+    // ---- Header ----
+    var header = document.createElement('div');
+    header.style.cssText = 'padding:18px 24px;background:linear-gradient(135deg,#7c3aed,#db2777);color:white;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;';
+    header.innerHTML = `
+        <div>
+            <div style="font-size:18px;font-weight:700;">📸 Status Archive</div>
+            <div style="font-size:12px;opacity:0.8;margin-top:2px;">Statuses captured while archiving was enabled — grouped by user</div>
+        </div>
+    `;
+
+    var closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '&times;';
+    closeBtn.style.cssText = 'background:rgba(255,255,255,0.2);border:none;color:white;font-size:26px;width:34px;height:34px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;';
+    closeBtn.onclick = closeModal;
+    header.appendChild(closeBtn);
+
+    // ---- Toolbar ----
+    var toolbar = document.createElement('div');
+    toolbar.style.cssText = 'padding:12px 24px;background:#f9fafb;border-bottom:1px solid #e5e7eb;display:flex;gap:10px;align-items:center;flex-shrink:0;';
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.textContent = '↺ Refresh';
+    refreshBtn.style.cssText = 'background:#7c3aed;color:white;border:none;padding:7px 14px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500;';
+    refreshBtn.onclick = function() { loadStatusArchive(content); };
+
+    var clearBtn = document.createElement('button');
+    clearBtn.textContent = '🗑 Clear All';
+    clearBtn.style.cssText = 'background:#dc2626;color:white;border:none;padding:7px 14px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500;margin-left:auto;';
+    clearBtn.onclick = function() {
+        if (!confirm('Clear all archived statuses? This cannot be undone.')) return;
+        var req = indexedDB.open('deletedMsgs', 3);
+        req.onsuccess = function() {
+            var tx = req.result.transaction('statuses', 'readwrite');
+            tx.objectStore('statuses').clear().onsuccess = function() {
+                loadStatusArchive(content);
+                updateStatusArchiveBadgeCount();
+            };
+        };
+    };
+
+    var noteEl = document.createElement('div');
+    noteEl.style.cssText = 'font-size:11px;color:#6b7280;';
+    noteEl.textContent = 'Enable "Archive Statuses" in the incognito menu to start capturing.';
+
+    toolbar.appendChild(refreshBtn);
+    toolbar.appendChild(noteEl);
+    toolbar.appendChild(clearBtn);
+
+    // ---- Content ----
+    var content = document.createElement('div');
+    content.style.cssText = 'overflow-y:auto;flex-grow:1;padding:20px 24px;';
+
+    // ---- Assemble ----
+    box.appendChild(header);
+    box.appendChild(toolbar);
+    box.appendChild(content);
+    modal.appendChild(box);
+    document.body.appendChild(modal);
+
+    loadStatusArchive(content);
+}
+
+function loadStatusArchive(container) {
+    container.innerHTML = '<div style="display:flex;justify-content:center;align-items:center;height:200px;"><div style="text-align:center;color:#6b7280;">⏳ Loading...</div></div>';
+
+    var req = indexedDB.open('deletedMsgs', 3);
+    req.onerror = function() {
+        container.innerHTML = '<div style="text-align:center;padding:40px;color:#dc2626;">❌ Could not open database. Make sure WhatsApp Web is loaded.</div>';
+    };
+    req.onsuccess = function() {
+        var db = req.result;
+        var tx = db.transaction('statuses', 'readonly');
+        var getAllReq = tx.objectStore('statuses').getAll();
+        getAllReq.onsuccess = function() {
+            renderStatusArchive(container, getAllReq.result);
+        };
+        getAllReq.onerror = function() {
+            container.innerHTML = '<div style="text-align:center;padding:40px;color:#dc2626;">❌ Error reading statuses.</div>';
+        };
+    };
+}
+
+function renderStatusArchive(container, statuses) {
+    if (!statuses || statuses.length === 0) {
+        container.innerHTML = `
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:220px;color:#6b7280;text-align:center;gap:12px;">
+                <div style="font-size:48px;">📭</div>
+                <div style="font-size:16px;font-weight:500;">No archived statuses yet</div>
+                <div style="font-size:13px;">Enable &ldquo;Archive Statuses&rdquo; in the incognito menu, then view contacts' statuses to capture them.</div>
+            </div>
+        `;
+        return;
+    }
+
+    // Prune entries older than 30 days in-memory (cleanup)
+    var thirtyDaysAgo = Math.floor(Date.now() / 1000) - (30 * 24 * 60 * 60);
+    statuses = statuses.filter(function(s) { return s.timestamp >= thirtyDaysAgo; });
+
+    // Sort newest first
+    statuses.sort(function(a, b) { return b.timestamp - a.timestamp; });
+
+    // Group by user JID
+    var groups = {};
+    statuses.forEach(function(s) {
+        var key = s.fromJid || s.from || 'unknown';
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(s);
+    });
+
+    var html = '';
+    Object.keys(groups).forEach(function(jid) {
+        var items = groups[jid];
+        var displayName = resolveDisplayName(jid);
+        if (!displayName || displayName === jid) {
+            displayName = jid.split('@')[0].split(':')[0];
+        }
+        var initial = displayName.charAt(0).toUpperCase();
+
+        html += `<div class="sa-user-section">`;
+        html += `<div class="sa-user-header">
+            <div class="sa-user-avatar">${initial}</div>
+            <div class="sa-user-name">${displayName}</div>
+            <div class="sa-user-count">${items.length} status${items.length > 1 ? 'es' : ''}</div>
+        </div>`;
+        html += `<div class="sa-grid">`;
+
+        items.forEach(function(s) {
+            var ts = new Date(s.timestamp * 1000).toLocaleString();
+            var mediaHTML = '';
+            var dlBtn = '';
+
+            if (s.isMedia && s.body) {
+                var mime = s.mimetype || '';
+                var dataURI = 'data:' + mime + ';base64,' + s.body;
+                if (mime.startsWith('image')) {
+                    mediaHTML = `<img class="sa-card-media" src="${dataURI}" alt="status" />`;
+                } else if (mime.startsWith('video')) {
+                    mediaHTML = `<video class="sa-card-media" src="${dataURI}" controls style="height:130px;"></video>`;
+                } else {
+                    mediaHTML = `<div class="sa-card-text-body">📎 ${mime || 'Media'}</div>`;
+                }
+                dlBtn = `<button class="sa-dl-btn" onclick="(function(){
+                    var a=document.createElement('a');
+                    a.href='${dataURI}';
+                    a.download='status_${s.id}';
+                    document.body.appendChild(a);a.click();document.body.removeChild(a);
+                })()">⬇ Save</button>`;
+            } else {
+                var txt = s.mediaText || s.body || '(no text)';
+                mediaHTML = `<div class="sa-card-text-body">${txt.substring(0, 120)}${txt.length > 120 ? '…' : ''}</div>`;
+            }
+
+            html += `<div class="sa-card">
+                ${mediaHTML}
+                <div class="sa-card-info">
+                    ${s.mediaText ? '<div>"' + s.mediaText.substring(0,60) + '"</div>' : ''}
+                    <div class="sa-card-ts">${ts}</div>
+                    ${dlBtn}
+                </div>
+            </div>`;
+        });
+
+        html += `</div></div>`; // close grid + section
+    });
+
+    container.innerHTML = html;
+}
+
 function tryInjectButtons() {
     if (_buttonsInjected) return;
 
@@ -1503,6 +1810,7 @@ function tryInjectButtons() {
         injectActivityLogsButton();
         injectViewOnceButton();
         injectDeletedMessagesButton();
+        injectStatusArchiveButton();
     }, 1200);
 
     setTimeout(exposeWhatsAppAPI, 200);
@@ -1534,7 +1842,15 @@ setTimeout(function () {
         console.log('[WAIncognito] Fallback: injecting deleted messages button directly');
         injectDeletedMessagesButton();
     }
+    if (!document.getElementById('whatsapp-status-archive-button')) {
+        injectStatusArchiveButton();
+    }
 }, 5000);
+
+// Update status archive badge when a status is archived
+document.addEventListener('onStatusArchived', function () {
+    updateStatusArchiveBadgeCount();
+});
 
 
 
@@ -1622,6 +1938,7 @@ document.addEventListener('onOptionsUpdate', function (e)
     if ('allowStatusDownload' in options) allowStatusDownload = options.allowStatusDownload;
     if ('typingNotifications' in options) typingNotificationsEnabled = options.typingNotifications;
     if ('stayOnline' in options) stayOnlineEnabled = options.stayOnline;
+    if ('statusArchive' in options) statusArchiveEnabled = options.statusArchive;
 
     // update graphics
     var safetyDelayPanel = document.getElementById("incognito-safety-delay-option-panel");

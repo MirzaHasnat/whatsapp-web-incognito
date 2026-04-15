@@ -1,4 +1,4 @@
-﻿﻿// This is the background page.
+﻿// This is the background page.
 // it keeps track of prefrences/settings in localStorage
 
 if (typeof chrome !== "undefined") {
@@ -210,7 +210,8 @@ var defaultOptions = {
     autoReceiptOnReplay: true,
     allowStatusDownload: true,
     typingNotifications: false,
-    stayOnline: false
+    stayOnline: false,
+    statusArchive: false
 };
 
 // Load options from storage
