@@ -628,6 +628,7 @@ function clearViewOnceMessages(callback) {
 function injectDeletedMessagesButton() {
     console.log('[WAIncognito] Attempting to inject deleted messages button');
     if (document.getElementById('whatsapp-deleted-msgs-button')) return;
+    if (!document.body) return;
 
     // Use fully inline styles — styles.css is a content-script file and
     // may NOT apply to elements injected from the page world script.
@@ -1488,6 +1489,7 @@ var _buttonsInjected = false;
 
 function injectStatusArchiveButton() {
     if (document.getElementById('whatsapp-status-archive-button')) return;
+    if (!document.body) return;
 
     var button = document.createElement('div');
     button.id = 'whatsapp-status-archive-button';
@@ -1686,20 +1688,40 @@ function showStatusArchiveModal() {
 function loadStatusArchive(container) {
     container.innerHTML = '<div style="display:flex;justify-content:center;align-items:center;height:200px;"><div style="text-align:center;color:#6b7280;">⏳ Loading...</div></div>';
 
+    function doQuery(db) {
+        try {
+            var tx = db.transaction('statuses', 'readonly');
+            tx.onerror = function() {
+                console.error('[WAIncognito] Status archive tx error:', tx.error);
+                container.innerHTML = '<div style="text-align:center;padding:40px;color:#dc2626;">❌ Error reading statuses: ' + (tx.error && tx.error.message) + '</div>';
+            };
+            var getAllReq = tx.objectStore('statuses').getAll();
+            getAllReq.onsuccess = function() {
+                renderStatusArchive(container, getAllReq.result);
+            };
+            getAllReq.onerror = function() {
+                console.error('[WAIncognito] getAll error:', getAllReq.error);
+                container.innerHTML = '<div style="text-align:center;padding:40px;color:#dc2626;">❌ Error reading statuses.</div>';
+            };
+        } catch (e) {
+            console.error('[WAIncognito] loadStatusArchive exception:', e);
+            container.innerHTML = '<div style="text-align:center;padding:40px;color:#dc2626;">❌ Database error: ' + e.message + '</div>';
+        }
+    }
+
+    // Prefer the already-open connection from interception.js to avoid version-upgrade races.
+    if (window.deletedMessagesDB) {
+        doQuery(window.deletedMessagesDB);
+        return;
+    }
+
+    // Fallback: open our own connection (popup opened before interception.js DB was ready).
     var req = indexedDB.open('deletedMsgs', 3);
     req.onerror = function() {
         container.innerHTML = '<div style="text-align:center;padding:40px;color:#dc2626;">❌ Could not open database. Make sure WhatsApp Web is loaded.</div>';
     };
     req.onsuccess = function() {
-        var db = req.result;
-        var tx = db.transaction('statuses', 'readonly');
-        var getAllReq = tx.objectStore('statuses').getAll();
-        getAllReq.onsuccess = function() {
-            renderStatusArchive(container, getAllReq.result);
-        };
-        getAllReq.onerror = function() {
-            container.innerHTML = '<div style="text-align:center;padding:40px;color:#dc2626;">❌ Error reading statuses.</div>';
-        };
+        doQuery(req.result);
     };
 }
 
@@ -1733,9 +1755,15 @@ function renderStatusArchive(container, statuses) {
     var html = '';
     Object.keys(groups).forEach(function(jid) {
         var items = groups[jid];
-        var displayName = resolveDisplayName(jid);
+        // Use stored contactName from first item if available, otherwise resolve live
+        var storedName = '';
+        for (var ci = 0; ci < items.length; ci++) {
+            if (items[ci].contactName) { storedName = items[ci].contactName; break; }
+        }
+        var displayName = storedName || resolveDisplayName(jid);
         if (!displayName || displayName === jid) {
-            displayName = jid.split('@')[0].split(':')[0];
+            var rawNum = jid.split('@')[0].split(':')[0];
+            displayName = /^\d+$/.test(rawNum) ? '+' + rawNum : rawNum;
         }
         var initial = displayName.charAt(0).toUpperCase();
 
@@ -1768,6 +1796,16 @@ function renderStatusArchive(container, statuses) {
                     a.download='status_${s.id}';
                     document.body.appendChild(a);a.click();document.body.removeChild(a);
                 })()">⬇ Save</button>`;
+            } else if (s.isMedia && !s.body) {
+                // Media status where download failed
+                var typeIcon = (s.type === 'video' || (s.mimetype && s.mimetype.startsWith('video'))) ? '🎬' :
+                               (s.type === 'image' || (s.mimetype && s.mimetype.startsWith('image'))) ? '🖼️' :
+                               (s.type === 'audio' || (s.mimetype && s.mimetype.startsWith('audio'))) ? '🎵' : '📎';
+                mediaHTML = `<div class="sa-card-text-body" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:#9ca3af;">
+                    <div style="font-size:32px;">${typeIcon}</div>
+                    <div style="font-size:11px;">Media unavailable</div>
+                    ${s.mediaText ? '<div style="font-size:11px;color:#6b7280;">"' + s.mediaText.substring(0,60) + '"</div>' : ''}
+                </div>`;
             } else {
                 var txt = s.mediaText || s.body || '(no text)';
                 mediaHTML = `<div class="sa-card-text-body">${txt.substring(0, 120)}${txt.length > 120 ? '…' : ''}</div>`;

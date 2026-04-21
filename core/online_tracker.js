@@ -167,12 +167,14 @@ async function resolveLidToPn(lid) {
 
         // Method 2: WPP
         if (typeof WPP !== 'undefined' && WPP.contact) {
-            var wppContact = await WPP.contact.get(lid);
-            if (wppContact && wppContact.phoneNumber) {
-                // wppContact.phoneNumber might be the user info
-                return wppContact.phoneNumber._serialized || wppContact.phoneNumber;
+            try {
+                var wppContact = await WPP.contact.get(lid);
+                if (wppContact && wppContact.phoneNumber) {
+                    return wppContact.phoneNumber._serialized || wppContact.phoneNumber;
+                }
+            } catch (wppErr) {
+                // WPP.contact.get throws for some LID formats — fall through to other methods
             }
-            // Sometimes WPP returns the same LID if it can't find PN?
         }
 
         // Method 3: Brute force search in Store.Contact (Efficient enough for small lists? No, Store has thousands)
@@ -334,11 +336,27 @@ async function subscribeToPresence(jid) {
         var subscribed = false;
 
         // 1. Try internal Store.Presence (Common in recent WA Web versions)
-        if (window.Store && window.Store.Presence && window.Store.Presence.subscribe) {
-            window.Store.Presence.subscribe(jid);
-            subscribed = true;
-            if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
-                console.log("[OnlineTracker] Subscribed using Store.Presence for:", jid);
+        if (window.Store && window.Store.Presence && typeof window.Store.Presence.subscribe === 'function') {
+            try {
+                // Try to create a proper WID since modern WA Web requires it
+                var wid = jid;
+                if (window.Store.WidFactory && typeof window.Store.WidFactory.createWid === 'function') {
+                    try { wid = window.Store.WidFactory.createWid(jid); } catch (e) { }
+                } else if (window.WhatsAppAPI && window.WhatsAppAPI.WidFactory && typeof window.WhatsAppAPI.WidFactory.createWid === 'function') {
+                    try { wid = window.WhatsAppAPI.WidFactory.createWid(jid); } catch (e) { }
+                } else if (typeof WPP !== 'undefined' && WPP.whatsapp && WPP.whatsapp.WidFactory && typeof WPP.whatsapp.WidFactory.createWid === 'function') {
+                    try { wid = WPP.whatsapp.WidFactory.createWid(jid); } catch (e) { }
+                }
+
+                window.Store.Presence.subscribe(wid);
+                subscribed = true;
+                if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
+                    console.log("[OnlineTracker] Subscribed using Store.Presence for:", jid);
+                }
+            } catch (err) {
+                if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
+                    console.log("[OnlineTracker] Store.Presence.subscribe failed for:", jid, err.message);
+                }
             }
         }
 
@@ -407,7 +425,11 @@ async function subscribeToPresence(jid) {
             var waStore = (typeof Store !== 'undefined' && Store) || (window.WhatsAppAPI && window.WhatsAppAPI.Store);
             if (waStore && waStore.Presence && typeof waStore.Presence.subscribe === 'function') {
                 try {
-                    waStore.Presence.subscribe(jid);
+                    var wid = jid;
+                    if (waStore.WidFactory && typeof waStore.WidFactory.createWid === 'function') {
+                        try { wid = waStore.WidFactory.createWid(jid); } catch (err) { }
+                    }
+                    waStore.Presence.subscribe(wid);
                     subscribed = true;
                     if (typeof WAdebugMode !== 'undefined' && WAdebugMode) console.log("[OnlineTracker] Subscribed using Store.Presence (global) for:", jid);
                 } catch (e) {

@@ -520,14 +520,22 @@ function renderStatusesInPanel(container, statuses) {
     Object.keys(groups).forEach(function (jid) {
         var items = groups[jid];
         var raw = jid.split('@')[0].split(':')[0];
-        var displayName = raw;
-        // Try WPP if available
-        try {
-            if (window.WPP && window.WPP.whatsapp && window.WPP.whatsapp.ContactStore) {
-                var m = window.WPP.whatsapp.ContactStore.get(jid);
-                if (m && (m.name || m.pushname)) displayName = m.name || m.pushname;
-            }
-        } catch(e) {}
+        // Use stored contactName from first item if available, otherwise resolve live
+        var displayName = '';
+        for (var ci = 0; ci < items.length; ci++) {
+            if (items[ci].contactName) { displayName = items[ci].contactName; break; }
+        }
+        if (!displayName) {
+            try {
+                if (window.WPP && window.WPP.whatsapp && window.WPP.whatsapp.ContactStore) {
+                    var m = window.WPP.whatsapp.ContactStore.get(jid);
+                    if (m && (m.name || m.pushname)) displayName = m.name || m.pushname;
+                }
+            } catch(e) {}
+        }
+        if (!displayName) {
+            displayName = /^\d+$/.test(raw) ? '+' + raw : raw;
+        }
 
         var initial = displayName.charAt(0).toUpperCase();
         var latestTs = new Date(items[0].timestamp * 1000).toLocaleString();
@@ -551,6 +559,11 @@ function renderStatusesInPanel(container, statuses) {
                 } else {
                     html += '<div class="incognito-status-text-thumb">📎</div>';
                 }
+            } else if (s.isMedia && !s.body) {
+                var typeIcon = (s.type === 'video' || (s.mimetype && s.mimetype.startsWith('video'))) ? '🎬' :
+                               (s.type === 'image' || (s.mimetype && s.mimetype.startsWith('image'))) ? '🖼️' :
+                               (s.type === 'audio' || (s.mimetype && s.mimetype.startsWith('audio'))) ? '🎵' : '📎';
+                html += '<div class="incognito-status-text-thumb">' + typeIcon + '</div>';
             } else {
                 var txt = (s.mediaText || s.body || '').substring(0, 40);
                 html += '<div class="incognito-status-text-thumb">' + (txt || '💬') + '</div>';

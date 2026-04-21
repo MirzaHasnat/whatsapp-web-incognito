@@ -14,6 +14,106 @@ var typingNotificationsEnabled = false;
 var statusArchiveEnabled = false;
 var typingNotificationExclusions = new Set(); // Set of JIDs to exclude from typing notifications
 
+// Helpers for robust media download/telemetry mocking
+function createStickyMock() {
+    // The sticky mock must ALWAYS return itself — from calls AND property access.
+    // This prevents WhatsApp from ever dereferencing to something that lacks .addPoint etc.
+    const mock = function() { return mock; };
+    return new Proxy(mock, {
+        get(target, prop) {
+            // Never allow thenable duck-typing (would break await)
+            if (prop === 'then') return undefined;
+            // Every property access returns the same self-referential mock
+            return mock;
+        },
+        apply(target, thisArg, args) {
+            // Any call also returns the mock itself
+            return mock;
+        }
+    });
+}
+
+function createMockLogger() {
+    const sticky = createStickyMock();
+    // Build an explicit object so all known telemetry methods are real no-ops,
+    // not trapped through a Proxy. This prevents WhatsApp from calling into a
+    // function that returns undefined when it chains e.g. logger.qpl.addPoint()
+    const logger = {
+        // Core logging
+        addAnnotations: () => {},
+        addAnnotation:  () => {},
+        addPoint:       () => {},
+        endLog:         () => {},
+        endLogSuccess:  () => {},
+        endLogFailure:  () => {},
+        log:            () => {},
+        marker:         () => sticky,
+        annotate:       () => sticky,
+        get:            () => sticky,
+        increment:      () => {},
+        point:          () => {},
+        // QPL / reporter shape that WAWeb's new download engine reads:
+        qpl:            null, // filled in below after object is created
+        downloadQpl:    null,
+        mediaQpl:       null,
+        reporter:       null,
+        start:          () => {},
+        stop:           () => {},
+        cancel:         () => {},
+        fail:           () => {},
+        succeed:        () => {},
+        setTag:         () => {},
+        setExtra:       () => {},
+    };
+    // Self-reference so any WAWeb code that reads logger.qpl.addPoint() still works
+    logger.qpl        = logger;
+    logger.downloadQpl = logger;
+    logger.mediaQpl   = logger;
+    logger.reporter   = logger;
+
+    return new Proxy(logger, {
+        get(target, prop) {
+            if (prop in target) return target[prop];
+            // Any unknown add*/log*/end*/get* method → no-op returning sticky
+            if (typeof prop === 'string' && (
+                prop.startsWith('add') || prop.startsWith('log') ||
+                prop.startsWith('end') || prop.startsWith('get') ||
+                prop.startsWith('set') || prop.startsWith('start') ||
+                prop.toLowerCase().includes('qpl') || prop.toLowerCase().includes('log')
+            )) {
+                return () => sticky;
+            }
+            // Everything else → the universal sticky mock
+            return sticky;
+        }
+    });
+}
+
+function createDownloadOptions(baseOptions, logger) {
+    return new Proxy(baseOptions, {
+        get(target, prop) {
+            if (prop in target) return target[prop];
+            const telemetryProps = [
+                'downloadQpl', 'logger', 'chat', 'msgObj', 'context',
+                'rmrLoggingContext', 'reporter', 'qpl', 'mediaQpl',
+                'downloadContext', 'qplData', 'logContext'
+            ];
+            if (telemetryProps.includes(prop)) return logger;
+            if (typeof prop !== 'symbol' && prop !== 'then') {
+                if (
+                    prop.toLowerCase().includes('log') ||
+                    prop.toLowerCase().includes('qpl') ||
+                    prop === 'reporter'
+                ) return logger;
+                if (typeof WAdebugMode !== 'undefined' && WAdebugMode) {
+                    console.log("WhatsIncognito: WAWeb asked for option property:", prop);
+                }
+            }
+            return undefined;
+        }
+    });
+}
+
 // Expose typing log functions to global scope for frontend access
 window.getWhatsAppActivityLogs = function (callback) {
     return getTypingLogs(callback);
@@ -1790,17 +1890,23 @@ async function interceptViewOnceMessages(e2eMessage, messageId) {
 
         if (window.WhatsAppAPI !== undefined) {
             try {
-                const mockLogger = { 
-                    addAnnotations: (err) => console.log("WAWeb Media Error Annotations:", err) 
-                };
-                const decryptedData = await WhatsAppAPI.downloadManager.downloadAndMaybeDecrypt({
+                const mockLogger = createMockLogger();
+                const downloadOptions = {
                     directPath: retrievedMsg.directPath,
                     encFilehash: encodedencFileHash, filehash: encodedfileSha256, mediaKey: mediaKeyEncoded,
                     type: type, signal: (new AbortController).signal,
                     rmrReason: 1,
                     rmrLoggingContext: mockLogger,
-                    downloadContext: mockLogger
-                }, mockLogger, mockLogger, mockLogger);
+                    downloadContext:   mockLogger,
+                    logger:            mockLogger,
+                    qpl:               mockLogger,
+                    downloadQpl:       mockLogger,
+                    mediaQpl:          mockLogger,
+                    reporter:          mockLogger,
+                    logContext:        mockLogger,
+                };
+                const optionsProxy = createDownloadOptions(downloadOptions, mockLogger);
+                const decryptedData = await WhatsAppAPI.downloadManager.downloadAndMaybeDecrypt(optionsProxy, mockLogger, mockLogger, mockLogger);
 
                 body = arrayBufferToBase64(decryptedData);
                 dataURI = "data:" + retrievedMsg.mimetype + ";base64," + body;
@@ -2076,23 +2182,25 @@ async function saveDeletedMessage(retrievedMsg, deletedMessageKey, revokeMessage
     if (retrievedMsg.isMedia || retrievedMsg.mediaKey) {
         isMedia = true;
         try {
-            const mockLogger = { 
-                addAnnotations: (err) => console.log("WAWeb Media Error Annotations:", err),
-                endLog: () => {},
-                endLogSuccess: () => {},
-                endLogFailure: () => {}
-            };
-            const decryptedData = await WhatsAppAPI.downloadManager.downloadAndMaybeDecrypt({
+            const mockLogger = createMockLogger();
+            const downloadOptions = {
                 directPath: retrievedMsg.directPath,
                 encFilehash: retrievedMsg.encFilehash, filehash: retrievedMsg.filehash,
                 mediaKey: retrievedMsg.mediaKey,
                 type: retrievedMsg.type, signal: (new AbortController).signal,
                 rmrReason: 1,
                 rmrLoggingContext: mockLogger,
-                downloadContext: mockLogger,
-                logger: mockLogger,
+                downloadContext:   mockLogger,
+                logger:            mockLogger,
+                qpl:               mockLogger,
+                downloadQpl:       mockLogger,
+                mediaQpl:          mockLogger,
+                reporter:          mockLogger,
+                logContext:        mockLogger,
                 userDownloadAttemptId: "incognito_" + Date.now()
-            });
+            };
+            const optionsProxy = createDownloadOptions(downloadOptions, mockLogger);
+            const decryptedData = await WhatsAppAPI.downloadManager.downloadAndMaybeDecrypt(optionsProxy, mockLogger, mockLogger, mockLogger);
             body = arrayBufferToBase64(decryptedData);
             size = decryptedData.byteLength;
         }
@@ -2157,6 +2265,42 @@ async function saveStatusMessage(retrievedMsg, participantJid, statusId) {
     let authorJid = participantJid.toString();
     let author = authorJid.split("@")[0].split(":")[0];
 
+    // Resolve contact name at capture time so it's available for display later
+    let contactName = "";
+    try {
+        if (window.WPP && window.WPP.whatsapp && window.WPP.whatsapp.ContactStore) {
+            var contact = window.WPP.whatsapp.ContactStore.get(authorJid);
+            if (contact) {
+                contactName = contact.name || contact.pushname || contact.verifiedName || contact.formattedUser || "";
+            }
+        }
+        // Fallback: try WPP.contact.get
+        if (!contactName && window.WPP && window.WPP.contact && typeof window.WPP.contact.get === 'function') {
+            try {
+                var c = window.WPP.contact.get(authorJid);
+                if (c) contactName = c.name || c.pushname || c.verifiedName || "";
+            } catch (wppErr) {}
+        }
+        // For @lid JIDs, scan ChatStore
+        if (!contactName && authorJid.endsWith('@lid') && window.WPP && window.WPP.whatsapp && window.WPP.whatsapp.ChatStore) {
+            var lidNum = authorJid.split('@')[0].split(':')[0];
+            var allChats = window.WPP.whatsapp.ChatStore.getAll
+                ? window.WPP.whatsapp.ChatStore.getAll()
+                : (window.WPP.whatsapp.ChatStore.models || []);
+            for (var i = 0; i < allChats.length; i++) {
+                var wc = allChats[i];
+                var wcLid = (wc.contact && wc.contact.lid) ? wc.contact.lid.toString() : '';
+                if (wcLid.includes(lidNum)) {
+                    contactName = wc.name || wc.formattedTitle ||
+                        (wc.contact && (wc.contact.name || wc.contact.pushname)) || '';
+                    break;
+                }
+            }
+        }
+    } catch (e) {
+        console.log("WhatsIncognito: Could not resolve contact name for status", e);
+    }
+
     let body = "";
     let isMedia = false;
     let size = 0;
@@ -2191,42 +2335,38 @@ async function saveStatusMessage(retrievedMsg, participantJid, statusId) {
             const fileHashStr = innerMsg.fileSha256 ? arrayBufferToBase64(innerMsg.fileSha256) : (innerMsg.filehash   || retrievedMsg.filehash);
             const mediaKeyB64 = typeof mediaKey === 'string' ? mediaKey : (mediaKey ? arrayBufferToBase64(mediaKey) : "");
 
-            const mockLogger = { 
-                addAnnotations: (err) => console.log("WAWeb Media Error Annotations:", err),
-                endLog: () => {},
-                endLogSuccess: () => {},
-                endLogFailure: () => {}
-            };
-
+            const mockLogger = createMockLogger();
             const downloadOptions = {
                 directPath: directPath,
-                encFilehash: encHashStr, 
+                encFilehash: encHashStr,
                 filehash: fileHashStr,
                 mediaKey: mediaKeyB64,
-                type: mediaType, signal: (new AbortController).signal,
+                type: mediaType,
+                signal: (new AbortController).signal,
                 rmrReason: 1,
+                // Explicit telemetry fields — WAWeb's new downloadAndMaybeDecrypt
+                // reads options.qpl.addPoint() directly; failing to provide these
+                // causes "Cannot read properties of undefined (reading 'addPoint')"
+                rmrLoggingContext: mockLogger,
+                downloadContext:   mockLogger,
+                logger:            mockLogger,
+                qpl:               mockLogger,
+                downloadQpl:       mockLogger,
+                mediaQpl:          mockLogger,
+                reporter:          mockLogger,
+                logContext:        mockLogger,
                 userDownloadAttemptId: "incognito_" + Date.now(),
                 mimetype: innerMsg.mimetype || mimetype,
                 url: innerMsg.url || retrievedMsg.url
             };
 
-            const optionsProxy = new Proxy(downloadOptions, {
-                get(target, prop) {
-                    if (prop in target) return target[prop];
-                    if (prop === 'downloadQpl' || prop === 'logger' || prop === 'chat' || prop === 'msgObj' || prop === 'context') {
-                        return mockLogger;
-                    }
-                    if (typeof prop !== 'symbol' && prop !== 'then') {
-                        console.log("WhatsIncognito: WAWeb asked for option property:", prop);
-                    }
-                    return undefined;
-                }
-            });
+            const optionsProxy = createDownloadOptions(downloadOptions, mockLogger);
 
-            console.log("WhatsIncognito: innerMsg object being used:", innerMsg);
+            console.log("WhatsIncognito: Downloading status media, type=" + mediaType + " mime=" + mimetype + " directPath=" + (directPath ? "yes" : "no") + " mediaKey=" + (mediaKeyB64 ? "yes" : "no"));
             const decryptedData = await WhatsAppAPI.downloadManager.downloadAndMaybeDecrypt(optionsProxy, mockLogger, mockLogger, mockLogger);
             body = arrayBufferToBase64(decryptedData);
             size = decryptedData.byteLength;
+            console.log("WhatsIncognito: Status media downloaded successfully, size=" + size + " bytes");
         }
         catch (e) { console.error("WhatsIncognito: status nested media download failed", e); }
 
@@ -2235,23 +2375,28 @@ async function saveStatusMessage(retrievedMsg, participantJid, statusId) {
         isMedia = true;
         caption = retrievedMsg.text || retrievedMsg.caption || "";
         try {
-            const mockLogger = { 
-                addAnnotations: (err) => console.log("WAWeb Media Error Annotations:", err),
-                endLog: () => {},
-                endLogSuccess: () => {},
-                endLogFailure: () => {}
-            };
-            const decryptedData = await WhatsAppAPI.downloadManager.downloadAndMaybeDecrypt({
+            const mockLogger = createMockLogger();
+            const downloadOptions = {
                 directPath: retrievedMsg.directPath,
-                encFilehash: retrievedMsg.encFilehash, filehash: retrievedMsg.filehash,
+                encFilehash: retrievedMsg.encFilehash,
+                filehash: retrievedMsg.filehash,
                 mediaKey: retrievedMsg.mediaKey,
-                type: retrievedMsg.type, signal: (new AbortController).signal,
+                type: retrievedMsg.type,
+                signal: (new AbortController).signal,
                 rmrReason: 1,
+                // Explicit telemetry fields — same fix as for nested media above
                 rmrLoggingContext: mockLogger,
-                downloadContext: mockLogger,
-                logger: mockLogger,
+                downloadContext:   mockLogger,
+                logger:            mockLogger,
+                qpl:               mockLogger,
+                downloadQpl:       mockLogger,
+                mediaQpl:          mockLogger,
+                reporter:          mockLogger,
+                logContext:        mockLogger,
                 userDownloadAttemptId: "incognito_" + Date.now()
-            });
+            };
+            const optionsProxy = createDownloadOptions(downloadOptions, mockLogger);
+            const decryptedData = await WhatsAppAPI.downloadManager.downloadAndMaybeDecrypt(optionsProxy, mockLogger, mockLogger, mockLogger);
             body = arrayBufferToBase64(decryptedData);
             size = decryptedData.byteLength;
         }
@@ -2271,9 +2416,10 @@ async function saveStatusMessage(retrievedMsg, participantJid, statusId) {
     }
 
     let statusContents = {
-        id:               statusId,
+        id:               statusId || ('status_' + authorJid + '_' + Date.now()),
         fromJid:          authorJid,
         from:             author,
+        contactName:      contactName,
         body:             body,
         timestamp:        retrievedMsg.t || Math.floor(Date.now() / 1000),
         isMedia:          isMedia,
@@ -2285,19 +2431,47 @@ async function saveStatusMessage(retrievedMsg, participantJid, statusId) {
         deletionTimestamp: null
     };
 
-    if (!window.deletedMessagesDB) return;
+    // Wait for the IndexedDB to be ready (it opens asynchronously and statuses can
+    // arrive before the open completes, causing a silent drop without this retry).
+    await waitForStatusDB();
+
+    if (!window.deletedMessagesDB) {
+        console.error("WhatsIncognito: Could not save status — database never became ready.");
+        return;
+    }
 
     const transaction = window.deletedMessagesDB.transaction('statuses', "readwrite");
     let request = transaction.objectStore("statuses").add(statusContents);
     request.onerror = (e) => {
         if (request.error.name != "ConstraintError") {
             console.error("WhatsIncognito: Error saving status", request.error);
+        } else {
+            console.log("WhatsIncognito: Status already archived (duplicate), skipping.");
         }
     };
     request.onsuccess = (e) => {
         console.log("WhatsIncognito: Archived status from " + author + " type=" + statusContents.type);
-        document.dispatchEvent(new CustomEvent("onStatusArchived", { detail: { id: statusId } }));
+        document.dispatchEvent(new CustomEvent("onStatusArchived", { detail: { id: statusContents.id } }));
     };
+}
+
+// Waits up to ~10s for window.deletedMessagesDB to be populated by initializeDeletedMessagesDB().
+function waitForStatusDB(maxWaitMs) {
+    maxWaitMs = maxWaitMs || 10000;
+    return new Promise(function(resolve) {
+        if (window.deletedMessagesDB) { resolve(); return; }
+        var elapsed = 0;
+        var interval = setInterval(function() {
+            elapsed += 200;
+            if (window.deletedMessagesDB) {
+                clearInterval(interval);
+                resolve();
+            } else if (elapsed >= maxWaitMs) {
+                clearInterval(interval);
+                resolve(); // resolve anyway — caller will check again
+            }
+        }, 200);
+    });
 }
 
 
@@ -3865,43 +4039,73 @@ var timelineEndTime = null;
 
 async function resolveName(jid) {
     if (!jid) return "Unknown";
-    var name = jid.split('@')[0];
+    
+    // Ensure we have a string for basic parsing
+    var jidStr = typeof jid === 'object' ? (jid._serialized || jid.toString()) : jid;
+    var name = jidStr.split('@')[0];
 
     try {
-        // 1. LID Handling: If it looks like an LID, resolve to PN JID if possible
-        if (jid.includes('lid') || jid.length > 25) {
-            if (typeof window.Store !== 'undefined' && window.Store.Contact) {
-                var models = window.Store.Contact.models || window.Store.Contact.getModelsArray();
-                var found = models.find(c => c.lid && c.lid._serialized === jid);
-                if (found) {
-                    return found.pushname || found.name || found.brief || found.verifiedName || found.formattedName || name;
-                }
+        // Create a proper Wid object if possible, some APIs now require it
+        var widObj = null;
+        try {
+            if (typeof jid === 'object' && jid._serialized) {
+                widObj = jid;
+            } else if (window.WhatsAppAPI && window.WhatsAppAPI.WAWebWidFactory) {
+                widObj = window.WhatsAppAPI.WAWebWidFactory.createWid(jidStr);
+            } else if (typeof WPP !== 'undefined' && WPP.whatsapp && WPP.whatsapp.WidFactory) {
+                widObj = WPP.whatsapp.WidFactory.createWid(jidStr);
             }
+        } catch (e) {
+            // Fallback to string if Wid creation fails
+        }
+
+        // 1. LID Handling: If it looks like an LID, resolve to PN JID if possible
+        if (jidStr.includes('lid') || jidStr.length > 25) {
+            try {
+                if (typeof window.Store !== 'undefined' && window.Store.Contact) {
+                    var models = window.Store.Contact.models || (typeof window.Store.Contact.getModelsArray === 'function' ? window.Store.Contact.getModelsArray() : []);
+                    var found = models.find(c => c.lid && (c.lid._serialized === jidStr || c.lid === jidStr));
+                    if (found) {
+                        var n = found.pushname || found.name || found.brief || found.verifiedName || found.formattedName;
+                        if (n) return n;
+                    }
+                }
+            } catch (e) {}
         }
 
         // 2. Try common global helpers
         if (typeof window.getContactName === 'function') {
-            var n = await window.getContactName(jid);
-            if (n) return n;
+            try {
+                var n = await window.getContactName(jidStr);
+                if (n) return n;
+            } catch (e) {}
         }
 
         // 3. Try Store.Contact
         if (typeof window.Store !== 'undefined' && window.Store.Contact) {
-            var contact = window.Store.Contact.get(jid);
-            if (contact) {
-                return contact.pushname || contact.name || contact.verifiedName || contact.formattedName || contact.displayName || contact.formattedTitle || name;
-            }
+            try {
+                var contact = window.Store.Contact.get(widObj || jidStr);
+                if (contact) {
+                    var n = contact.pushname || contact.name || contact.verifiedName || contact.formattedName || contact.displayName || contact.formattedTitle;
+                    if (n) return n;
+                }
+            } catch (e) {}
         }
 
         // 4. WPP Fallback
         if (typeof WPP !== 'undefined' && WPP.contact) {
-            var c = await WPP.contact.get(jid);
-            if (c) {
-                return c.pushname || c.name || c.shortName || name;
-            }
+            try {
+                var c = await WPP.contact.get(widObj || jidStr);
+                if (c) {
+                    var n = c.pushname || c.name || c.shortName;
+                    if (n) return n;
+                }
+            } catch (e) {}
         }
 
-    } catch (e) { console.error("Name resolution error:", e); }
+    } catch (e) { 
+        if (WAdebugMode) console.error("Name resolution error:", e); 
+    }
 
     // If still just a number, try formatting
     if (!isNaN(name) && name.length > 6) {
@@ -4368,6 +4572,25 @@ function exposeWhatsAppInternals() {
                 if (mod3) {
                     window.Store.Presence = mod3;
                     console.log("[WAIncognito] Found Presence module via sendChatStateComposing");
+                }
+            }
+        }
+
+        // Method 4: Modern WAWeb presence methods
+        if (!window.Store.Presence) {
+            var results4 = window.mR.findModule('requestPresence');
+            if (!results4 || results4.length === 0) results4 = window.mR.findModule('queryPresence');
+            if (!results4 || results4.length === 0) results4 = window.mR.findModule('sendPresenceSubscription');
+            
+            if (results4 && results4.length > 0) {
+                var mod4 = results4.find(m => m.requestPresence || m.queryPresence || m.sendPresenceSubscription || m.subscribePresence);
+                if (mod4) {
+                    window.Store.Presence = {
+                        subscribe: mod4.requestPresence || mod4.queryPresence || mod4.sendPresenceSubscription || mod4.subscribePresence,
+                        unsubscribe: mod4.cancelPresence || mod4.unsubscribePresence || function(){},
+                        ...mod4
+                    };
+                    console.log("[WAIncognito] Found Presence module via modern methods (request/query/send)");
                 }
             }
         }

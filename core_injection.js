@@ -1,5 +1,4 @@
-injectScript('core/ws_hook.js'); // important to inject as early as possible
-injectOtherScripts();
+injectScript('core/ws_hook.js').then(injectOtherScripts); // ws_hook must finish before other scripts
 
 async function injectOtherScripts() {
 	var meta = document.createElement('meta');
@@ -7,6 +6,35 @@ async function injectOtherScripts() {
 	meta.content = chrome.runtime.getURL('');
 	(document.head || document.documentElement).appendChild(meta);
 
+	// Preload all scripts in parallel (download only, no execution yet)
+	var allScripts = [
+		'lib/pbf.3.0.5.min.js',
+		'lib/libsignal-protocol-ee5b8ba.min.js',
+		'lib/pako.js',
+		'core/console_filter.js',
+		'core/parsing/binary_reader.js',
+		'core/parsing/binary_writer.js',
+		'core/parsing/node_reader_writer.js',
+		'core/parsing/protobuf/WhisperTextProtocol.js',
+		'core/parsing/protobuf/WAProto.js',
+		'core/utils.js',
+		'core/ui_class_names.js',
+		'core/online_tracker.js',
+		'core/interception.js',
+		'core/multi_device.js',
+		'core/node_handler.js',
+		'core/injected_ui.js',
+		'core/wpp_utils.js',
+	];
+	allScripts.forEach(function(src) {
+		var link = document.createElement('link');
+		link.rel = 'preload';
+		link.as = 'script';
+		link.href = chrome.runtime.getURL(src);
+		(document.head || document.documentElement).appendChild(link);
+	});
+
+	// Execute in dependency order — downloads are already cached from preload
 	await injectScript('lib/pbf.3.0.5.min.js');
 	await injectScript('lib/libsignal-protocol-ee5b8ba.min.js');
 	await injectScript('lib/pako.js');
@@ -18,26 +46,20 @@ async function injectOtherScripts() {
 	await injectScript('core/parsing/protobuf/WhisperTextProtocol.js');
 	await injectScript('core/parsing/protobuf/WAProto.js');
 
-	await injectScript('core/utils.js');
 	await injectScript('core/ui_class_names.js');
+	await injectScript('core/utils.js');
 
-	// Load interception.js before injected_ui.js to ensure window.showWhatsAppActivityLogs is available
-	// Load online_tracker.js and interception.js
 	await injectScript('core/online_tracker.js');
 	await injectScript('core/interception.js');
+	await injectScript('core/multi_device.js');
+	await injectScript('core/node_handler.js');
 	injectScript('core/injected_ui.js');
 	injectScript('core/wpp_utils.js');
 
-	await injectScript('core/multi_device.js');
-	await injectScript('core/node_handler.js');
-
 	setTimeout(
-		function () { 
-			injectScript('lib/moduleraid.js'); 
-			// wppconnect-wa.js disabled: incompatible with current WhatsApp Web version,
-			// causes dozens of uncaught TypeErrors. All WPP usage in the extension is
-			// optional (guarded with window.WPP && checks), so core features are unaffected.
-			// injectScript('lib/wppconnect-wa.js');
+		function () {
+			injectScript('lib/moduleraid.js');
+			injectScript('lib/wppconnect-wa.js');
 		},
 		500);
 }
@@ -49,6 +71,11 @@ function injectScript(scriptName) {
 		s.onload = function () {
 			this.parentNode.removeChild(this);
 			resolve(true);
+		};
+		s.onerror = function () {
+			console.error("WAIncognito: Failed to inject script: " + scriptName);
+			this.parentNode.removeChild(this);
+			resolve(false); 
 		};
 		(document.head || document.documentElement).appendChild(s);
 	});

@@ -6,35 +6,65 @@ var MultiDevice = {};
 
 // Safety checks for global libraries
 var getPbf = function() {
-    var candidate = window.Pbf || (typeof Pbf !== 'undefined' ? Pbf : null);
+    // Fast path: already resolved and cached
+    if (window.Pbf && typeof window.Pbf === 'function') return window.Pbf;
+
+    var candidate = null;
+
+    // 1. Direct window/global lookups
+    if (typeof Pbf !== 'undefined' && typeof Pbf === 'function') candidate = Pbf;
+    else if (typeof globalThis !== 'undefined' && globalThis.Pbf) candidate = globalThis.Pbf;
+    else if (typeof self !== 'undefined' && self.Pbf) candidate = self.Pbf;
+
+    // 2. UMD Node.js path: WhatsApp's page defines window.module so the pbf UMD
+    //    runs the Node branch which does:  module.exports = PbfConstructor
+    //    That means window.module.exports IS the constructor directly — NOT nested under .Pbf
+    if (!candidate && window.module && window.module.exports) {
+        var exp = window.module.exports;
+        if (typeof exp === 'function') {
+            candidate = exp;                         // module.exports = Pbf directly
+        } else if (exp && typeof exp.Pbf === 'function') {
+            candidate = exp.Pbf;                     // module.exports = { Pbf: ... }
+        }
+    }
+
+    // 3. window.exports fallback
+    if (!candidate && window.exports) {
+        var exp = window.exports;
+        if (typeof exp === 'function') candidate = exp;
+        else if (exp && typeof exp.Pbf === 'function') candidate = exp.Pbf;
+    }
+
     if (!candidate) return null;
-    // If the module exports a wrapper object instead of the constructor directly,
-    // unwrap it: check .Pbf, .default, or the object itself if it's callable.
+
+    // Unwrap wrapper objects (.Pbf, .default, lone function)
     if (typeof candidate === 'function') {
-        console.log("WAIncognito: getPbf returning candidate directly", candidate);
+        window.Pbf = candidate; // cache for future calls
         return candidate;
     }
     if (candidate.Pbf && typeof candidate.Pbf === 'function') {
-        console.log("WAIncognito: getPbf returning candidate.Pbf");
+        window.Pbf = candidate.Pbf;
         return candidate.Pbf;
     }
     if (candidate.default && typeof candidate.default === 'function') {
-        console.log("WAIncognito: getPbf returning candidate.default");
+        window.Pbf = candidate.default;
         return candidate.default;
     }
-    // fallback: try to find any exported function
+    // Last resort: only function exported
     var keys = Object.keys(candidate);
+    var functions = [];
     for (var i = 0; i < keys.length; i++) {
         if (typeof candidate[keys[i]] === 'function') {
-            console.log("WAIncognito: getPbf returning fallback", keys[i]);
-            return candidate[keys[i]];
+            if (keys[i] === 'Pbf') { window.Pbf = candidate[keys[i]]; return candidate[keys[i]]; }
+            functions.push(candidate[keys[i]]);
         }
     }
-    console.log("WAIncognito: getPbf returning null!");
+    if (functions.length === 1) { window.Pbf = functions[0]; return functions[0]; }
+
     return null;
 };
-var getPako = function() { return window.pako || (typeof pako !== 'undefined' ? pako : null); };
-var getLibsignal = function() { return window.libsignal || (typeof libsignal !== 'undefined' ? libsignal : null); };
+var getPako = function() { return window.pako || (typeof pako !== 'undefined' ? pako : null) || (typeof globalThis !== 'undefined' ? globalThis.pako : null) || (typeof self !== 'undefined' ? self.pako : null); };
+var getLibsignal = function() { return window.libsignal || (typeof libsignal !== 'undefined' ? libsignal : null) || (typeof globalThis !== 'undefined' ? globalThis.libsignal : null) || (typeof self !== 'undefined' ? self.libsignal : null); };
 
 
 var originalImportKey = crypto.subtle.importKey;
@@ -286,6 +316,10 @@ MultiDevice.decryptE2EMessagesFromMessageNode = async function(messageNode)
         message = new Uint8Array(message.buffer, message.byteOffset, message.length - message[message.length - 1]);
     
         var pbfInstance = getPbf();
+        if (!pbfInstance) {
+            console.error("WAIncognito: Pbf library is not loaded, cannot read Protobuf message.");
+            continue; 
+        }
         var decryptedMessage = Message.read(new pbfInstance(message));
         decryptedMessages.push(decryptedMessage);
 
@@ -315,6 +349,10 @@ MultiDevice.signalDecryptWhisperMessage = async function(whisperMessageBuffer, s
     }
 
     var pbfInstance = getPbf();
+    if (!pbfInstance) {
+        console.error("WAIncognito: Pbf library is not loaded, cannot decrypt WhisperMessage.");
+        return null; // or throw
+    }
     var version = (new Uint8Array(whisperMessageBuffer))[0];
     var messageProto = whisperMessageBuffer.slice(1, whisperMessageBuffer.byteLength - 8);
     var whisperMessage = WhisperMessage.read(new pbfInstance(messageProto));
@@ -456,6 +494,10 @@ MultiDevice.signalDecryptSenderKeyMessage = async function(senderKeyMessageBuffe
     var senderKey = await storage.loadSenderKey(senderKeyName);
 
     var pbfInstance = getPbf();
+    if (!pbfInstance) {
+        console.error("WAIncognito: Pbf library is not loaded, cannot decrypt SenderKeyMessage.");
+        return null;
+    }
     var version = new Uint8Array(senderKeyMessageBuffer)[0];
     var messageProto = senderKeyMessageBuffer.slice(1, senderKeyMessageBuffer.byteLength - 64);
     var senderKeyMessage = SenderKeyMessage.read(new pbfInstance(messageProto));
@@ -503,6 +545,10 @@ MultiDevice.signalDecryptSenderKeyMessage = async function(senderKeyMessageBuffe
 MultiDevice.signalGetKeyDistributionMessage = function(keyDistributionMessageBuffer)
 {
     var pbfInstance = getPbf();
+    if (!pbfInstance) {
+        console.error("WAIncognito: Pbf library is not loaded, cannot read KeyDistributionMessage.");
+        return null;
+    }
     var version = new Uint8Array(keyDistributionMessageBuffer)[0];
     var messageProto = keyDistributionMessageBuffer.slice(1, keyDistributionMessageBuffer.byteLength);
     var senderKeyMessage = WhisperSenderKeyDistributionMessage.read(new pbfInstance(messageProto));
@@ -606,6 +652,11 @@ MultiDevice.looksLikeHandshakePacket = function(payload)
     try
     {
         var pbfInstance = getPbf();
+        if (!pbfInstance) {
+            // If Pbf is not loaded yet, we can't check the handshake packet properly.
+            // But we should probably not crash here.
+            return false;
+        }
         handshakeMessage = HandshakeMessage.read(new pbfInstance(binary));
     }
     catch
